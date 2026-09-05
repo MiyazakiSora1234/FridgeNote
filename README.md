@@ -135,11 +135,43 @@ npm start        # Expo Dev Serverを起動し、Expo Goやシミュレータで
   ユーザー分離・冪等性・在庫減算ロジックを検証する。
 - CI(`.github/workflows/backend-ci.yml`)で型チェックとテストを実行する。
 
-## デプロイ
+## デプロイ / GitHub Actions × AWS OIDC セットアップ
 
 `.github/workflows/deploy.yml` は**手動実行(workflow_dispatch)専用**にしている。インフラ変更は
-元に戻しにくく影響範囲が大きいため、pushへの自動フックはあえて行わない設計。事前にAWS側でGitHub Actions用の
-OIDC IAM Role(`AWS_DEPLOY_ROLE_ARN`)を作成し、リポジトリのSecretsに登録すること。
+元に戻しにくく影響範囲が大きいため、pushへの自動フックはあえて行わない設計。
+
+GitHub ActionsからAWSへは長期アクセスキーを配置せず、OIDCによる一時クレデンシャルで
+デプロイする(`infra/github-oidc.tf`)。初回だけ以下の手順が必要:
+
+1. **AWS認証情報を用意する**(自分のPC/CIどちらでもよい)。IAMユーザーのアクセスキー、
+   もしくはSSOセッションを `aws configure` / `aws sso login` 等で用意し、
+   Terraformが実行できる状態にする(このリポジトリの検証はDockerの`hashicorp/terraform`
+   イメージで行った。ローカルにTerraform CLIが無ければ同様にDockerで代用できる)。
+
+2. **初回だけ人間の認証情報で `terraform apply` を実行する**(OIDC Provider/デプロイ用IAM Roleを含む
+   全リソースを作成)。
+
+   ```bash
+   cd backend && npm ci && npm run build && npm run package:api && npm run package:worker && cd ..
+   cd infra
+   terraform init
+   terraform apply -var="alert_email=you@example.com"
+   ```
+
+3. **GitHubリポジトリ側の設定**:
+   - Settings → Environments で `production` という名前のEnvironmentを作成し、
+     必要に応じて Required reviewers を設定する(`workflow_dispatch` 実行前に承認を挟める)。
+   - Settings → Secrets and variables → Actions → Secrets に
+     `AWS_DEPLOY_ROLE_ARN` として `terraform output github_actions_deploy_role_arn` の値を登録する。
+   - (リージョンを`us-east-1`以外にする場合)Variables に `AWS_REGION` を設定する。
+
+4. 以降のインフラ変更は GitHub の Actions タブから `deploy` ワークフローを
+   `workflow_dispatch` で実行する(`apply` 入力を `true` にすると `terraform apply` まで行う。
+   `false`(既定)なら `plan` の内容確認のみ)。
+
+`infra/github-oidc.tf` のIAMポリシーは、DynamoDB/S3/SQS/Lambda/API Gateway/Cognito/CloudWatch/SNSへの
+アクセスと、IAMは `${project_name}-*` という命名規則のロールのみを操作対象に限定しており、
+アカウント全体を操作できる権限(AdministratorAccess等)は付与していない。
 
 ## 既知の制約・未検証事項
 

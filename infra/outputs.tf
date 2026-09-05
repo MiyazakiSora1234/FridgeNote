@@ -25,3 +25,8 @@ output "analysis_queue_url" {
 output "analysis_dlq_url" {
   value = aws_sqs_queue.analysis_dlq.url
 }
+
+output "github_actions_deploy_role_arn" {
+  description = "GitHub ActionsのSecrets `AWS_DEPLOY_ROLE_ARN` に設定する値。"
+  value       = aws_iam_role.github_actions_deploy.arn
+}

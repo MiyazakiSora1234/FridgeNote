@@ -43,3 +43,15 @@ variable "cors_allowed_origins" {
   type        = list(string)
   default     = ["*"]
 }
+
+variable "github_repository" {
+  description = "GitHub Actions OIDCでのデプロイを許可するリポジトリ(\"owner/repo\"形式)。"
+  type        = string
+  default     = "MiyazakiSora1234/FridgeNote"
+}
+
+variable "github_actions_environment" {
+  description = "deploy.ymlのjobが指定するGitHub Environment名。OIDCトークンのsubクレーム検証に使う。"
+  type        = string
+  default     = "production"
+}

@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/archive"
       version = "~> 2.4"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   # 状態管理はチーム利用時にS3+DynamoDBロックへ切り替える想定。
