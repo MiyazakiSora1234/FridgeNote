@@ -10,6 +10,22 @@
 [docs/dynamodb-design.md](docs/dynamodb-design.md)(DynamoDBのアクセスパターン設計)、
 [docs/api-spec.md](docs/api-spec.md)(API仕様)を参照。
 
+## クイックスタート(Makefile)
+
+よく使う操作は `Makefile` にまとめている(`make help` で一覧表示)。TerraformとAWS CLIはネイティブ
+インストールせず、すべてDocker経由(`hashicorp/terraform` / `amazon/aws-cli`)で実行するため、
+Docker Desktopが起動している必要がある。
+
+```bash
+make help            # タスク一覧
+make backend-ci       # backendのinstall + build + test
+make infra-plan       # terraform plan(Docker経由、~/.awsをread-onlyマウント)
+make infra-apply      # terraform apply(要: 事前にplanの内容を確認)
+make health           # デプロイ済みAPIの /v1/health を確認
+make mobile-typecheck # mobileの型チェック
+make eas-build-ios    # iOS向けEASビルド(要: 事前にApple IDでの対話ログイン済み)
+```
+
 ## リポジトリ構成
 
 ```

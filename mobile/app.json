@@ -9,18 +9,25 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.fridgenote.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "食材や料理を撮影して冷蔵庫に登録するためにカメラを使用します。"
+        "NSCameraUsageDescription": "食材や料理を撮影して冷蔵庫に登録するためにカメラを使用します。",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.fridgenote.app",
-      "permissions": ["CAMERA"]
+      "permissions": [
+        "CAMERA"
+      ]
     },
     "extra": {
       "apiBaseUrl": "https://ig9bl6uwje.execute-api.us-east-1.amazonaws.com",
       "cognitoRegion": "us-east-1",
       "cognitoUserPoolId": "us-east-1_lBpaT4lPX",
-      "cognitoUserPoolClientId": "5hoi2gkns8ot36smnilmu5o3sk"
-    }
+      "cognitoUserPoolClientId": "5hoi2gkns8ot36smnilmu5o3sk",
+      "eas": {
+        "projectId": "3f342c74-d50b-45cc-a785-2a254e5741b5"
+      }
+    },
+    "owner": "miyazaki_sora"
   }
 }
