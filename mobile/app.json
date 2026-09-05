@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "FridgeNote",
+    "slug": "fridgenote",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.fridgenote.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "食材や料理を撮影して冷蔵庫に登録するためにカメラを使用します。"
+      }
+    },
+    "android": {
+      "package": "com.fridgenote.app",
+      "permissions": ["CAMERA"]
+    },
+    "extra": {
+      "apiBaseUrl": "https://CHANGE_ME.execute-api.us-east-1.amazonaws.com",
+      "cognitoRegion": "us-east-1",
+      "cognitoUserPoolId": "CHANGE_ME",
+      "cognitoUserPoolClientId": "CHANGE_ME"
+    }
+  }
+}

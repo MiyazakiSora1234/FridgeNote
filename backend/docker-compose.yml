@@ -1,0 +1,22 @@
+# ローカル開発用。DynamoDB Localに対して手動で疎通確認したい場合に使う
+# (自動テストはvitest内のfakeDynamoで完結しており、これの起動は必須ではない)。
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local:2.5.2
+    ports:
+      - "8000:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+
+  backend:
+    build: .
+    depends_on:
+      - dynamodb-local
+    environment:
+      TABLE_NAME: FridgeNoteTable
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      AWS_ENDPOINT_URL_DYNAMODB: http://dynamodb-local:8000
+    volumes:
+      - ./src:/app/src
+      - ./test:/app/test

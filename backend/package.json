@@ -1,0 +1,31 @@
+{
+  "name": "fridgenote-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package:api": "esbuild src/handlers/api.ts --bundle --platform=node --target=node20 --outfile=dist/api.js --external:@aws-sdk/*",
+    "package:worker": "esbuild src/handlers/analyzerWorker.ts --bundle --platform=node --target=node20 --outfile=dist/analyzerWorker.js --external:@aws-sdk/*"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.637.0",
+    "@aws-sdk/client-dynamodb": "^3.637.0",
+    "@aws-sdk/client-s3": "^3.637.0",
+    "@aws-sdk/lib-dynamodb": "^3.637.0",
+    "@aws-sdk/s3-request-presigner": "^3.637.0",
+    "hono": "^4.6.0",
+    "ulid": "^2.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^20.14.0",
+    "aws-lambda": "^1.0.7",
+    "esbuild": "^0.23.1",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

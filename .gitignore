@@ -1,0 +1,29 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Node
+node_modules/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+infra/build/
+
+# Backend build output
+backend/dist/
+
+# Mobile
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+
+# Env files
+.env
+.env.local
+.env.*.local

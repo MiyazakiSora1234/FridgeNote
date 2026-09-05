@@ -1,0 +1,29 @@
+import { Hono } from "hono";
+import type { AppEnv } from "../middleware/auth.js";
+import { CreateAnalysisRequestSchema } from "../schemas/apiSchemas.js";
+import { ForbiddenError, ValidationError } from "../lib/errors.js";
+import { createAnalysis, getAnalysis } from "../services/analysisService.js";
+
+export const analysesRoute = new Hono<AppEnv>();
+
+analysesRoute.post("/", async (c) => {
+  const body = CreateAnalysisRequestSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!body.success) throw ValidationError(body.error.message);
+
+  const userId = c.get("userId");
+  // imageKeyが自分の名前空間 (users/{userId}/uploads/...) 以外を指していないか検証。
+  // presigned URL発行時にサーバー側で決めたパスなので通常は一致するが、
+  // クライアントが任意のimageKeyを送ってきても他人の画像を解析させられないようにする防御。
+  if (!body.data.imageKey.startsWith(`users/${userId}/uploads/`)) {
+    throw ForbiddenError("imageKey does not belong to the authenticated user");
+  }
+
+  const result = await createAnalysis(userId, body.data.imageKey, body.data.type);
+  return c.json({ analysisId: result.analysisId, status: result.status }, 201);
+});
+
+analysesRoute.get("/:id", async (c) => {
+  const userId = c.get("userId");
+  const analysis = await getAnalysis(userId, c.req.param("id"));
+  return c.json(analysis, 200);
+});
