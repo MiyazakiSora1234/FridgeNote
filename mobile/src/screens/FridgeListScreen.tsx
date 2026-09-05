@@ -16,6 +16,7 @@ import type { FridgeItem } from "../types";
 import { api } from "../api/client";
 import { ExpiryBadge } from "../components/ExpiryBadge";
 import { useAuth } from "../auth/AuthContext";
+import { getErrorMessage } from "../lib/getErrorMessage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "FridgeList">;
 
@@ -30,7 +31,7 @@ export function FridgeListScreen({ navigation }: Props) {
       const res = await api.listFridgeItems();
       setItems(res.items);
     } catch (e) {
-      Alert.alert("取得に失敗しました", e instanceof Error ? e.message : String(e));
+      Alert.alert("取得に失敗しました", getErrorMessage(e));
     } finally {
       setLoading(false);
     }

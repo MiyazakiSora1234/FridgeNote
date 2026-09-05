@@ -4,6 +4,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { api } from "../api/client";
 import { LabeledTextInput } from "../components/LabeledTextInput";
+import { getErrorMessage } from "../lib/getErrorMessage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AddItemManual">;
 
@@ -30,7 +31,7 @@ export function AddItemManualScreen({ navigation }: Props) {
       });
       navigation.goBack();
     } catch (e) {
-      Alert.alert("登録に失敗しました", e instanceof Error ? e.message : String(e));
+      Alert.alert("登録に失敗しました", getErrorMessage(e));
     } finally {
       setSubmitting(false);
     }

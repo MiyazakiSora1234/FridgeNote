@@ -4,6 +4,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { prepareImageForUpload } from "../lib/imagePrep";
+import { getErrorMessage } from "../lib/getErrorMessage";
 import { api } from "../api/client";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Camera">;
@@ -39,7 +40,7 @@ export function CameraScreen({ route, navigation }: Props) {
 
       navigation.replace("AnalysisResult", { analysisId, analysisType });
     } catch (e) {
-      Alert.alert("アップロードに失敗しました", e instanceof Error ? e.message : String(e));
+      Alert.alert("アップロードに失敗しました", getErrorMessage(e));
     } finally {
       setUploading(false);
     }

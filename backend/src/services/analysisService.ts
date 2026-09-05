@@ -123,6 +123,30 @@ export async function completeAnalysis(
   );
 }
 
+/**
+ * AIの認識結果に対してユーザーが実際に確定・修正した内容を記録する
+ * (docs/architecture.md「将来のAI再学習データとして使えるよう保存する」に対応)。
+ * AI結果(result)は書き換えず、userFeedbackに別枠で保持することで
+ * 「AIの生出力」と「ユーザー確定値」を分離したまま両方追跡できるようにする。
+ * 呼び出し元は補助的な記録として扱い、失敗してもメインの処理は止めないこと
+ * (存在しない/他人のanalysisIdが渡ってきても本流の登録処理自体は失敗させたくないため)。
+ */
+export async function recordUserFeedback(
+  userId: string,
+  analysisId: string,
+  feedback: unknown,
+): Promise<void> {
+  await ddb.send(
+    new UpdateCommand({
+      TableName: TABLE_NAME,
+      Key: analysisPrimaryKey(userId, analysisId),
+      UpdateExpression: "SET userFeedback = :feedback, updatedAt = :now",
+      ConditionExpression: "attribute_exists(PK)",
+      ExpressionAttributeValues: { ":feedback": feedback, ":now": new Date().toISOString() },
+    }),
+  );
+}
+
 export async function failAnalysis(
   userId: string,
   analysisId: string,

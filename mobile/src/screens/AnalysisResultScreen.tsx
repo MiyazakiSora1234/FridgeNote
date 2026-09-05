@@ -4,6 +4,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import type { ImageAnalysis } from "../types";
 import { api } from "../api/client";
+import { getErrorMessage } from "../lib/getErrorMessage";
 import { ManualFallback } from "./analysisResult/ManualFallback";
 import { FoodConfirmForm } from "./analysisResult/FoodConfirmForm";
 import { DishConfirmForm } from "./analysisResult/DishConfirmForm";
@@ -40,7 +41,7 @@ export function AnalysisResultScreen({ route, navigation }: Props) {
           setTimeout(poll, POLL_INTERVAL_MS);
         }
       } catch (e) {
-        if (!cancelled) Alert.alert("解析結果の取得に失敗しました", e instanceof Error ? e.message : String(e));
+        if (!cancelled) Alert.alert("解析結果の取得に失敗しました", getErrorMessage(e));
       }
     };
     poll();

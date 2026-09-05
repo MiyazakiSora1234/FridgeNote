@@ -5,6 +5,7 @@ import type { RootStackParamList } from "../../navigation/types";
 import type { FoodAnalysisResult } from "../../types";
 import { api } from "../../api/client";
 import { LabeledTextInput } from "../../components/LabeledTextInput";
+import { getErrorMessage } from "../../lib/getErrorMessage";
 import { LowConfidenceNotice } from "./LowConfidenceNotice";
 
 interface Props {
@@ -38,7 +39,7 @@ export function FoodConfirmForm({ analysisId, result, navigation }: Props) {
       });
       navigation.popToTop();
     } catch (e) {
-      Alert.alert("登録に失敗しました", e instanceof Error ? e.message : String(e));
+      Alert.alert("登録に失敗しました", getErrorMessage(e));
     } finally {
       setSubmitting(false);
     }

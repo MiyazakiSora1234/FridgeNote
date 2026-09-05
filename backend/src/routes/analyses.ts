@@ -1,14 +1,14 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../middleware/auth.js";
 import { CreateAnalysisRequestSchema } from "../schemas/apiSchemas.js";
-import { ForbiddenError, ValidationError } from "../lib/errors.js";
+import { ForbiddenError, validationErrorFromZod } from "../lib/errors.js";
 import { createAnalysis, getAnalysis } from "../services/analysisService.js";
 
 export const analysesRoute = new Hono<AppEnv>();
 
 analysesRoute.post("/", async (c) => {
   const body = CreateAnalysisRequestSchema.safeParse(await c.req.json().catch(() => ({})));
-  if (!body.success) throw ValidationError(body.error.message);
+  if (!body.success) throw validationErrorFromZod(body.error);
 
   const userId = c.get("userId");
   // imageKeyが自分の名前空間 (users/{userId}/uploads/...) 以外を指していないか検証。

@@ -5,7 +5,7 @@ import {
   CreateFridgeItemRequestSchema,
   UpdateFridgeItemRequestSchema,
 } from "../schemas/apiSchemas.js";
-import { ValidationError } from "../lib/errors.js";
+import { validationErrorFromZod } from "../lib/errors.js";
 import {
   consumeIngredients,
   createFridgeItem,
@@ -13,7 +13,7 @@ import {
   listFridgeItems,
   updateFridgeItem,
 } from "../services/fridgeService.js";
-import { getAnalysis } from "../services/analysisService.js";
+import { getAnalysis, recordUserFeedback } from "../services/analysisService.js";
 
 export const fridgeRoute = new Hono<AppEnv>();
 
@@ -25,7 +25,7 @@ fridgeRoute.get("/items", async (c) => {
 
 fridgeRoute.post("/items", async (c) => {
   const body = CreateFridgeItemRequestSchema.safeParse(await c.req.json().catch(() => ({})));
-  if (!body.success) throw ValidationError(body.error.message);
+  if (!body.success) throw validationErrorFromZod(body.error);
 
   const userId = c.get("userId");
   const source = body.data.sourceAnalysisId ? "image_food" : "manual";
@@ -36,12 +36,24 @@ fridgeRoute.post("/items", async (c) => {
     expiresAt: body.data.expiresAt ?? null,
     source,
   });
+
+  if (body.data.sourceAnalysisId) {
+    // AI認識結果に対してユーザーが最終的に確定した値を記録する(補助的な記録なので失敗は無視する)。
+    await recordUserFeedback(userId, body.data.sourceAnalysisId, {
+      type: "food_confirmed",
+      ingredientName: body.data.ingredientName,
+      quantity: body.data.quantity,
+      unit: body.data.unit,
+      expiresAt: body.data.expiresAt ?? null,
+    }).catch((err) => console.error("failed to record user feedback (non-fatal)", err));
+  }
+
   return c.json(item, 201);
 });
 
 fridgeRoute.patch("/items/:id", async (c) => {
   const body = UpdateFridgeItemRequestSchema.safeParse(await c.req.json().catch(() => ({})));
-  if (!body.success) throw ValidationError(body.error.message);
+  if (!body.success) throw validationErrorFromZod(body.error);
 
   const userId = c.get("userId");
   const item = await updateFridgeItem(userId, c.req.param("id"), body.data);
@@ -56,7 +68,7 @@ fridgeRoute.delete("/items/:id", async (c) => {
 
 fridgeRoute.post("/consume", async (c) => {
   const body = ConsumeRequestSchema.safeParse(await c.req.json().catch(() => ({})));
-  if (!body.success) throw ValidationError(body.error.message);
+  if (!body.success) throw validationErrorFromZod(body.error);
 
   const userId = c.get("userId");
   // sourceAnalysisIdの所有者チェックを兼ねて取得(他人の解析結果からは消費できない)
@@ -70,5 +82,13 @@ fridgeRoute.post("/consume", async (c) => {
     dishName,
     body.data.consumedIngredients,
   );
+
+  // AIが候補として出した食材のうち、ユーザーが実際に「使った」と確定したものを記録する
+  // (補助的な記録なので失敗は無視する)。
+  await recordUserFeedback(userId, body.data.sourceAnalysisId, {
+    type: "dish_consumed",
+    consumedIngredients: body.data.consumedIngredients,
+  }).catch((err) => console.error("failed to record user feedback (non-fatal)", err));
+
   return c.json(result, 200);
 });

@@ -1,5 +1,6 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { config } from "./config.js";
 
 const client = new DynamoDBClient({});
 
@@ -7,7 +8,7 @@ export const ddb = DynamoDBDocumentClient.from(client, {
   marshallOptions: { removeUndefinedValues: true },
 });
 
-export const TABLE_NAME = process.env.TABLE_NAME ?? "FridgeNoteTable";
+export const TABLE_NAME = config.tableName;
 
 /**
  * DynamoDBの条件付き書き込み(ConditionExpression)が条件不成立で弾かれたエラーかどうかを判定する。

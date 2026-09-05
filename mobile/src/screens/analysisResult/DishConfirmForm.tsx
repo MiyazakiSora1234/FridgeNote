@@ -5,6 +5,7 @@ import type { RootStackParamList } from "../../navigation/types";
 import type { DishAnalysisIngredient } from "../../types";
 import { api } from "../../api/client";
 import { AppTextInput } from "../../components/AppTextInput";
+import { getErrorMessage } from "../../lib/getErrorMessage";
 import { LowConfidenceNotice } from "./LowConfidenceNotice";
 
 interface Props {
@@ -59,7 +60,7 @@ export function DishConfirmForm({ analysisId, dish, ingredients, navigation }: P
       });
       navigation.popToTop();
     } catch (e) {
-      Alert.alert("在庫の更新に失敗しました", e instanceof Error ? e.message : String(e));
+      Alert.alert("在庫の更新に失敗しました", getErrorMessage(e));
     } finally {
       setSubmitting(false);
     }

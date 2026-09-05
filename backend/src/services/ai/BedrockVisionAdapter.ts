@@ -12,15 +12,34 @@ import {
   type RawDishAnalysis,
   type RawFoodAnalysis,
 } from "../../schemas/aiSchemas.js";
+import { config } from "../../lib/config.js";
 import { AiInvocationError, AiResponseInvalidError, type VisionAnalysisAdapter } from "./VisionAnalysisAdapter.js";
 
 const client = new BedrockRuntimeClient({});
 
 // コスト最優先のためデフォルトは軽量マルチモーダルモデル(Amazon Nova Lite)。
-// Parameter Store等から上書き可能にし、モデル差し替えをコード変更なしで行えるようにする。
-const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? "amazon.nova-lite-v1:0";
+// 環境変数(BEDROCK_MODEL_ID)で上書き可能にし、モデル差し替えをコード変更なしで行えるようにする。
+const MODEL_ID = config.bedrockModelId;
 const MAX_RETRIES = 3;
 const INVOKE_TIMEOUT_MS = 25_000;
+
+/**
+ * リクエスト内容そのものが原因のエラー(権限不足・入力不正・モデル/リソース不在)は
+ * 何度リトライしても同じ結果にしかならないため、即座に諦めてリトライ回数を消費しない。
+ * それ以外(スロットリング・タイムアウト・一時的なサービス障害等)は指数バックオフで再試行する。
+ */
+const NON_RETRYABLE_ERROR_NAMES = new Set([
+  "AccessDeniedException",
+  "ValidationException",
+  "ResourceNotFoundException",
+  "UnrecognizedClientException",
+]);
+
+export function isRetryableError(err: unknown): boolean {
+  const name = (err as { name?: unknown })?.name;
+  if (typeof name !== "string") return true; // 未知の形のエラー(ネットワーク断等)は念のため再試行する
+  return !NON_RETRYABLE_ERROR_NAMES.has(name);
+}
 
 const FOOD_TOOL_NAME = "report_food_analysis";
 const DISH_TOOL_NAME = "report_dish_analysis";
@@ -90,6 +109,9 @@ async function invokeWithTool<T>(params: {
     } catch (err) {
       if (err instanceof AiResponseInvalidError) throw err;
       lastError = err;
+      if (!isRetryableError(err)) {
+        throw new AiInvocationError(`Bedrock invocation failed with a non-retryable error: ${String(err)}`);
+      }
       // 指数バックオフで再試行(Bedrockのスロットリング/一時的タイムアウト対策)
       await new Promise((r) => setTimeout(r, 300 * 2 ** (attempt - 1)));
     } finally {

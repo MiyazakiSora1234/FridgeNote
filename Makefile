@@ -11,7 +11,7 @@ SHELL := /bin/bash
 	backend-install backend-build backend-test backend-package backend-ci \
 	infra-fmt infra-init infra-validate infra-plan infra-apply infra-output infra-clean \
 	mobile-install mobile-typecheck mobile-start eas-init eas-build-ios eas-build-list \
-	check-consistency \
+	check-consistency sync-mobile-config \
 	health deploy-plan deploy-apply clean
 
 PROJECT_ROOT   := $(CURDIR)
@@ -50,6 +50,7 @@ help:
 	@echo "  eas-build-list    list recent EAS builds"
 	@echo ""
 	@echo "  check-consistency verify backend/mobile shared constants haven't drifted"
+	@echo "  sync-mobile-config update mobile/app.json extra from terraform output"
 	@echo ""
 	@echo "  health            curl the deployed API's /v1/health"
 	@echo "  deploy-plan       trigger deploy.yml workflow_dispatch, plan only"
@@ -142,6 +143,9 @@ eas-build-list:
 
 check-consistency:
 	node scripts/check-shared-constants.mjs
+
+sync-mobile-config:
+	$(DOCKER) run --rm -v "$(PROJECT_ROOT):/workspace" -v ~/.aws:/root/.aws:ro -w /workspace/infra $(TF_IMAGE) output -json | node scripts/sync-mobile-config.mjs
 
 # ---- misc -------------------------------------------------------------------
 
