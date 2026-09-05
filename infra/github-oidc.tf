@@ -21,9 +21,15 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 # deploy.ymlは `environment: production` を指定しているため、OIDCトークンのsubクレームは
-# `repo:<owner>/<repo>:environment:<environment_name>` の形式になる。
-# これをGitHub側のEnvironment保護ルール(必要なレビュアー等)と組み合わせることで、
-# 「mainブランチへの誰かのpushだけで勝手にapplyされる」事故を防ぐ。
+# `repo:<owner>/<repo>:environment:<environment_name>` の形式になる想定だったが、
+# 実際にCloudTrailで観測したsubは `repo:<owner>@<ownerId>/<repo>@<repoId>:environment:<env>` という、
+# owner/repo名に不変ID(GitHubがリポジトリのrename/transfer対策として付与)を含む形式だった。
+# IDは環境依存の値なのでハードコードせず、StringLikeでワイルドカードマッチさせる。
+locals {
+  github_repository_owner = split("/", var.github_repository)[0]
+  github_repository_name  = split("/", var.github_repository)[1]
+}
+
 data "aws_iam_policy_document" "github_actions_assume_role" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -37,9 +43,12 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
       values   = ["sts.amazonaws.com"]
     }
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:environment:${var.github_actions_environment}"]
+      values = [
+        "repo:${local.github_repository_owner}@*/${local.github_repository_name}@*:environment:${var.github_actions_environment}",
+        "repo:${var.github_repository}:environment:${var.github_actions_environment}",
+      ]
     }
   }
 }

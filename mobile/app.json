@@ -17,10 +17,10 @@
       "permissions": ["CAMERA"]
     },
     "extra": {
-      "apiBaseUrl": "https://CHANGE_ME.execute-api.us-east-1.amazonaws.com",
+      "apiBaseUrl": "https://ig9bl6uwje.execute-api.us-east-1.amazonaws.com",
       "cognitoRegion": "us-east-1",
-      "cognitoUserPoolId": "CHANGE_ME",
-      "cognitoUserPoolClientId": "CHANGE_ME"
+      "cognitoUserPoolId": "us-east-1_lBpaT4lPX",
+      "cognitoUserPoolClientId": "5hoi2gkns8ot36smnilmu5o3sk"
     }
   }
 }

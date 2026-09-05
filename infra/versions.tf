@@ -16,9 +16,17 @@ terraform {
     }
   }
 
-  # 状態管理はチーム利用時にS3+DynamoDBロックへ切り替える想定。
-  # 個人/5ユーザー規模のMVPではローカルstateでも運用可能なため、
-  # ここでは明示的なbackend設定を行わずデフォルト(local)のままとする。
+  # GitHub Actions(deploy.yml)とローカルの両方からapplyできるよう、
+  # stateはS3(+DynamoDBロック)で共有する。バケット/テーブルは
+  # このリポジトリの外で一度だけ手動ブートストラップ済み
+  # (fridgenote-tfstate-<account_id> / fridgenote-tfstate-lock)。
+  backend "s3" {
+    bucket         = "fridgenote-tfstate-125192672369"
+    key            = "fridgenote/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "fridgenote-tfstate-lock"
+    encrypt        = true
+  }
 }
 
 provider "aws" {

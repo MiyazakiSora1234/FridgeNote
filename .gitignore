@@ -11,9 +11,11 @@ node_modules/
 .terraform/
 *.tfstate
 *.tfstate.*
-*.tfplan
-tfplan
+tfplan*
 infra/build/
+
+# Claude Code local state
+.claude/
 
 # Backend build output
 backend/dist/

@@ -2,7 +2,6 @@
 build/
 *.tfstate
 *.tfstate.*
-*.tfplan
-tfplan
+tfplan*
 crash.log
 .terraform.tfstate.lock.info

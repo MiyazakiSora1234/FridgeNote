@@ -173,18 +173,23 @@ GitHub ActionsからAWSへは長期アクセスキーを配置せず、OIDCに�
 アクセスと、IAMは `${project_name}-*` という命名規則のロールのみを操作対象に限定しており、
 アカウント全体を操作できる権限(AdministratorAccess等)は付与していない。
 
+## デプロイ状況
+
+2026-09-05時点で、AWSアカウント(`125192672369` / `us-east-1`)に対して `terraform apply` 済み。
+`GET {api_base_url}/v1/health` が `{"ok":true}` を返すことを確認済み。Terraform stateは
+S3(`fridgenote-tfstate-125192672369`)+ DynamoDBロック(`fridgenote-tfstate-lock`)で管理しており、
+ローカル・GitHub Actions(`deploy.yml`)の両方から同じstateに対してplan/applyできる。
+GitHub Actions用のOIDC Provider/デプロイRole/`production` Environment/`AWS_DEPLOY_ROLE_ARN` Secretの登録も完了しており、
+`deploy.yml` の `workflow_dispatch` 実行(OIDCでのAssumeRole)を実際に動作確認済み。
+
 ## 既知の制約・未検証事項
 
-- この環境にはTerraform CLIが直接インストールされていないため、公式Dockerイメージ(`hashicorp/terraform`)で
-  `fmt` / `init` / `validate` / `plan` を実行して検証済み(`terraform fmt` で検出された整形差分は反映済み)。
-  `plan` はダミーの認証情報でAWSのSTS呼び出しに到達するところまで進行することを確認しており、設定自体に
-  構文・参照エラーがないことは確認できている。ただし**実際のAWSアカウントに対する `plan`/`apply` は未実施**なので、
-  デプロイ前に必ず自分のAWS認証情報で `terraform plan` を確認すること。ローカルにTerraformが無い場合は例えば
-  次のようにDockerで代替できる:
+- Terraform CLIはこの開発環境に直接インストールされていないため、公式Dockerイメージ(`hashicorp/terraform`)で
+  `fmt` / `init` / `validate` / `plan` / `apply` を実行している(ローカルにTerraformが無い場合の代替コマンド例):
   ```bash
-  docker run --rm -v "$(pwd)/..:/workspace" -w /workspace/infra \
-    -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN \
-    hashicorp/terraform:1.9.0 plan
+  docker run --rm \
+    -v "$(pwd)/..:/workspace" -v ~/.aws:/root/.aws:ro \
+    -w /workspace/infra hashicorp/terraform:1.9.0 plan
   ```
 - モバイルアプリは実機・シミュレータでの動作確認を行っていない(このサンドボックス環境にはExpo実行環境がない)。
   `npm run typecheck` によるTypeScriptの型検証のみ完了している。カメラ権限まわりや実際のCognito認証フローは
