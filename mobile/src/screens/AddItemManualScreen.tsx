@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Alert, Button, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Button, StyleSheet, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { api } from "../api/client";
+import { LabeledTextInput } from "../components/LabeledTextInput";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AddItemManual">;
 
@@ -37,17 +38,15 @@ export function AddItemManualScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>食材名</Text>
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="例: トマト" />
-
-      <Text style={styles.label}>数量</Text>
-      <TextInput style={styles.input} value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
-
-      <Text style={styles.label}>単位</Text>
-      <TextInput style={styles.input} value={unit} onChangeText={setUnit} placeholder="例: 個 / g / ml" />
-
-      <Text style={styles.label}>賞味期限(YYYY-MM-DD、任意)</Text>
-      <TextInput style={styles.input} value={expiresAt} onChangeText={setExpiresAt} placeholder="2026-09-20" />
+      <LabeledTextInput label="食材名" value={name} onChangeText={setName} placeholder="例: トマト" />
+      <LabeledTextInput label="数量" value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
+      <LabeledTextInput label="単位" value={unit} onChangeText={setUnit} placeholder="例: 個 / g / ml" />
+      <LabeledTextInput
+        label="賞味期限(YYYY-MM-DD、任意)"
+        value={expiresAt}
+        onChangeText={setExpiresAt}
+        placeholder="2026-09-20"
+      />
 
       <Button title={submitting ? "登録中..." : "登録する"} onPress={onSubmit} disabled={submitting} />
     </View>
@@ -56,11 +55,4 @@ export function AddItemManualScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24 },
-  label: { fontWeight: "600", marginTop: 12, marginBottom: 4 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
-  },
 });

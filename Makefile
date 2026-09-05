@@ -11,6 +11,7 @@ SHELL := /bin/bash
 	backend-install backend-build backend-test backend-package backend-ci \
 	infra-fmt infra-init infra-validate infra-plan infra-apply infra-output infra-clean \
 	mobile-install mobile-typecheck mobile-start eas-init eas-build-ios eas-build-list \
+	check-consistency \
 	health deploy-plan deploy-apply clean
 
 PROJECT_ROOT   := $(CURDIR)
@@ -47,6 +48,8 @@ help:
 	@echo "  eas-init          create/link the EAS project"
 	@echo "  eas-build-ios     iOS EAS build (preview / internal distribution)"
 	@echo "  eas-build-list    list recent EAS builds"
+	@echo ""
+	@echo "  check-consistency verify backend/mobile shared constants haven't drifted"
 	@echo ""
 	@echo "  health            curl the deployed API's /v1/health"
 	@echo "  deploy-plan       trigger deploy.yml workflow_dispatch, plan only"
@@ -134,6 +137,11 @@ eas-build-ios:
 
 eas-build-list:
 	cd mobile && npx eas-cli build:list --platform ios --limit 5
+
+# ---- shared constants --------------------------------------------------------
+
+check-consistency:
+	node scripts/check-shared-constants.mjs
 
 # ---- misc -------------------------------------------------------------------
 

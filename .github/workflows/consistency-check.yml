@@ -1,0 +1,28 @@
+name: consistency-check
+
+# backendとmobileで別々に定義している「本来共有すべき定数」がズレていないかを検証する。
+# (npm workspacesによる型/定数共有は、Expo/Metro側のモノレポ対応を検証できていないため見送っており、
+#  代わりにこのスクリプトで機械的にドリフトを検知する)
+on:
+  pull_request:
+    paths:
+      - "backend/src/schemas/aiSchemas.ts"
+      - "mobile/src/constants.ts"
+      - "scripts/check-shared-constants.mjs"
+      - ".github/workflows/consistency-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/src/schemas/aiSchemas.ts"
+      - "mobile/src/constants.ts"
+      - "scripts/check-shared-constants.mjs"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/check-shared-constants.mjs

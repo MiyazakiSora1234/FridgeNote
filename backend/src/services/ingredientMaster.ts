@@ -1,17 +1,33 @@
 import { GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { ddb, TABLE_NAME } from "../lib/dynamo.js";
 import { newId } from "../lib/ids.js";
+import { Keys } from "../lib/keys.js";
 import { normalizeIngredientName } from "../lib/normalize.js";
 import type { Ingredient } from "../types/index.js";
 
-const MASTER_PARTITION = "INGREDIENT_MASTER";
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5分
 
 /**
- * 食材マスター全件をロードし、正規化名 -> Ingredient のマップを作る。
- * 5人規模・食材種別も高々数百件程度の想定のため、全件ロードで十分(将来
- * 件数が増えた場合はGSI3を直接引くクエリに切り替える)。
+ * 食材マスターのインメモリキャッシュ(Lambda実行コンテキストが温まっている間だけ有効)。
+ * 5人規模・食材種別も高々数百件程度の想定のため全件ロードで十分だが、
+ * ウォームスタートのたびに毎回全件スキャンするのは無駄なのでTTLキャッシュする
+ * (将来件数が増えた場合はGSI3を直接引くクエリに切り替える)。
  */
+let cache: { items: Ingredient[]; expiresAt: number } | null = null;
+
+/**
+ * テスト専用: モジュールスコープのキャッシュをリセットする。
+ * DynamoDBをフェイクに差し替える統合テストでは、テストケースをまたいで
+ * このキャッシュが残ると「前のテストで作った食材が別テストにも見える」という
+ * 意図しない依存が発生するため、各テストの beforeEach から呼び出すこと。
+ */
+export function __resetIngredientCacheForTests(): void {
+  cache = null;
+}
+
 async function loadAllIngredients(): Promise<Ingredient[]> {
+  if (cache && cache.expiresAt > Date.now()) return cache.items;
+
   const items: Ingredient[] = [];
   let ExclusiveStartKey: Record<string, unknown> | undefined;
   do {
@@ -20,13 +36,15 @@ async function loadAllIngredients(): Promise<Ingredient[]> {
         TableName: TABLE_NAME,
         IndexName: "GSI3",
         KeyConditionExpression: "GSI3PK = :pk",
-        ExpressionAttributeValues: { ":pk": MASTER_PARTITION },
+        ExpressionAttributeValues: { ":pk": Keys.ingredientMasterPartition() },
         ExclusiveStartKey,
       }),
     );
     for (const raw of res.Items ?? []) items.push(raw as Ingredient);
     ExclusiveStartKey = res.LastEvaluatedKey;
   } while (ExclusiveStartKey);
+
+  cache = { items, expiresAt: Date.now() + CACHE_TTL_MS };
   return items;
 }
 
@@ -65,15 +83,17 @@ export async function resolveIngredientId(
     new PutCommand({
       TableName: TABLE_NAME,
       Item: {
-        PK: `INGREDIENT#${id}`,
-        SK: "METADATA",
-        GSI3PK: MASTER_PARTITION,
-        GSI3SK: `NAME#${normalized}`,
+        PK: Keys.ingredient(id),
+        SK: Keys.ingredientMetadata(),
+        GSI3PK: Keys.ingredientMasterPartition(),
+        GSI3SK: Keys.ingredientName(normalized),
         ...item,
       },
       ConditionExpression: "attribute_not_exists(PK)",
     }),
   );
+  // TTL切れを待たず、同一ウォームコンテナ内の後続呼び出しがすぐ見つけられるようにする。
+  cache?.items.push(item);
   return { ingredientId: id, name: rawName, category: categoryHint };
 }
 
@@ -81,7 +101,7 @@ export async function getIngredientById(ingredientId: string): Promise<Ingredien
   const res = await ddb.send(
     new GetCommand({
       TableName: TABLE_NAME,
-      Key: { PK: `INGREDIENT#${ingredientId}`, SK: "METADATA" },
+      Key: { PK: Keys.ingredient(ingredientId), SK: Keys.ingredientMetadata() },
     }),
   );
   return (res.Item as Ingredient | undefined) ?? null;

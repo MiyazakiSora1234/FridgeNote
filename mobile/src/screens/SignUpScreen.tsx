@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Button, StyleSheet, Text, TextInput, View } from "react-native";
+import { Button, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { confirmSignUp, signUp } from "../auth/cognito";
+import { AppTextInput } from "../components/AppTextInput";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SignUp">;
 
@@ -45,8 +46,8 @@ export function SignUpScreen({ navigation }: Props) {
       <View style={styles.container}>
         <Text style={styles.title}>確認コードを入力</Text>
         <Text style={styles.hint}>{email} に届いた確認コードを入力してください</Text>
-        <TextInput
-          style={styles.input}
+        <AppTextInput
+          style={styles.field}
           placeholder="確認コード"
           keyboardType="number-pad"
           value={code}
@@ -61,16 +62,16 @@ export function SignUpScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>新規登録</Text>
-      <TextInput
-        style={styles.input}
+      <AppTextInput
+        style={styles.field}
         placeholder="メールアドレス"
         autoCapitalize="none"
         keyboardType="email-address"
         value={email}
         onChangeText={setEmail}
       />
-      <TextInput
-        style={styles.input}
+      <AppTextInput
+        style={styles.field}
         placeholder="パスワード(8文字以上)"
         secureTextEntry
         value={password}
@@ -86,12 +87,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 24 },
   title: { fontSize: 24, fontWeight: "700", marginBottom: 16, textAlign: "center" },
   hint: { marginBottom: 16, textAlign: "center", color: "#555" },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
+  field: { marginBottom: 12 },
   error: { color: "#B00020", marginBottom: 12 },
 });

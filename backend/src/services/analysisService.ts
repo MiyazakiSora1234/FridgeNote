@@ -1,10 +1,16 @@
 import { GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { ddb, TABLE_NAME } from "../lib/dynamo.js";
+import { ddb, isConditionalCheckFailed, TABLE_NAME } from "../lib/dynamo.js";
 import { analysisIdFromImageKey } from "../lib/ids.js";
+import { Keys } from "../lib/keys.js";
 import { NotFoundError } from "../lib/errors.js";
 import type { AnalysisResult, AnalysisType, ImageAnalysis } from "../types/index.js";
 
 const ANALYSIS_TTL_DAYS = 90;
+
+/** この service 内で繰り返し使うPK/SKの組み立てをここに集約する。 */
+function analysisPrimaryKey(userId: string, analysisId: string) {
+  return { PK: Keys.user(userId), SK: Keys.analysis(analysisId) };
+}
 
 /**
  * 解析ジョブを作成する。imageKeyから決定論的にanalysisIdを導出し、
@@ -37,10 +43,9 @@ export async function createAnalysis(
       new PutCommand({
         TableName: TABLE_NAME,
         Item: {
-          PK: `USER#${userId}`,
-          SK: `ANALYSIS#${analysisId}`,
-          GSI2PK: `IMAGEKEY#${imageKey}`,
-          GSI2SK: `ANALYSIS#${analysisId}`,
+          ...analysisPrimaryKey(userId, analysisId),
+          GSI2PK: Keys.imageKey(imageKey),
+          GSI2SK: Keys.analysis(analysisId),
           ...item,
         },
         ConditionExpression: "attribute_not_exists(PK)",
@@ -48,7 +53,7 @@ export async function createAnalysis(
     );
     return { analysisId, status: "pending", created: true };
   } catch (err) {
-    if ((err as { name?: string }).name === "ConditionalCheckFailedException") {
+    if (isConditionalCheckFailed(err)) {
       const existing = await getAnalysis(userId, analysisId);
       return { analysisId, status: existing.status, created: false };
     }
@@ -60,7 +65,7 @@ export async function getAnalysis(userId: string, analysisId: string): Promise<I
   const res = await ddb.send(
     new GetCommand({
       TableName: TABLE_NAME,
-      Key: { PK: `USER#${userId}`, SK: `ANALYSIS#${analysisId}` },
+      Key: analysisPrimaryKey(userId, analysisId),
     }),
   );
   if (!res.Item) throw NotFoundError("analysis not found");
@@ -80,7 +85,7 @@ export async function markProcessing(userId: string, analysisId: string): Promis
     await ddb.send(
       new UpdateCommand({
         TableName: TABLE_NAME,
-        Key: { PK: `USER#${userId}`, SK: `ANALYSIS#${analysisId}` },
+        Key: analysisPrimaryKey(userId, analysisId),
         UpdateExpression: "SET #status = :processing, updatedAt = :now",
         ConditionExpression: "#status <> :completed",
         ExpressionAttributeNames: { "#status": "status" },
@@ -93,9 +98,7 @@ export async function markProcessing(userId: string, analysisId: string): Promis
     );
     return true;
   } catch (err) {
-    if ((err as { name?: string }).name === "ConditionalCheckFailedException") {
-      return false; // 既に完了済み -> 重複メッセージとしてスキップ
-    }
+    if (isConditionalCheckFailed(err)) return false; // 既に完了済み -> 重複メッセージとしてスキップ
     throw err;
   }
 }
@@ -108,7 +111,7 @@ export async function completeAnalysis(
   await ddb.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
-      Key: { PK: `USER#${userId}`, SK: `ANALYSIS#${analysisId}` },
+      Key: analysisPrimaryKey(userId, analysisId),
       UpdateExpression: "SET #status = :completed, #result = :result, updatedAt = :now",
       ExpressionAttributeNames: { "#status": "status", "#result": "result" },
       ExpressionAttributeValues: {
@@ -128,7 +131,7 @@ export async function failAnalysis(
   await ddb.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
-      Key: { PK: `USER#${userId}`, SK: `ANALYSIS#${analysisId}` },
+      Key: analysisPrimaryKey(userId, analysisId),
       UpdateExpression: "SET #status = :failed, errorReason = :reason, updatedAt = :now",
       ExpressionAttributeNames: { "#status": "status" },
       ExpressionAttributeValues: {

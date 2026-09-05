@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Button, StyleSheet, Text, TextInput, View } from "react-native";
+import { Button, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../auth/AuthContext";
+import { AppTextInput } from "../components/AppTextInput";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SignIn">;
 
@@ -28,16 +29,16 @@ export function SignInScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>FridgeNote</Text>
-      <TextInput
-        style={styles.input}
+      <AppTextInput
+        style={styles.field}
         placeholder="メールアドレス"
         autoCapitalize="none"
         keyboardType="email-address"
         value={email}
         onChangeText={setEmail}
       />
-      <TextInput
-        style={styles.input}
+      <AppTextInput
+        style={styles.field}
         placeholder="パスワード"
         secureTextEntry
         value={password}
@@ -54,13 +55,7 @@ export function SignInScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 24 },
   title: { fontSize: 28, fontWeight: "700", marginBottom: 24, textAlign: "center" },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
+  field: { marginBottom: 12 },
   error: { color: "#B00020", marginBottom: 12 },
   spacer: { height: 16 },
 });

@@ -6,9 +6,12 @@ const fakeDdb = createFakeDdb();
 vi.mock("../../src/lib/dynamo.js", () => ({
   ddb: fakeDdb,
   TABLE_NAME: "TestTable",
+  isConditionalCheckFailed: (err: unknown) =>
+    typeof err === "object" && err !== null && (err as { name?: unknown }).name === "ConditionalCheckFailedException",
 }));
 
 const { app } = await import("../../src/app.js");
+const { __resetIngredientCacheForTests } = await import("../../src/services/ingredientMaster.js");
 
 function authEnv(userId: string) {
   return {
@@ -30,6 +33,7 @@ async function json<T = any>(res: Response): Promise<T> {
 
 beforeEach(() => {
   fakeDdb.store.clear();
+  __resetIngredientCacheForTests();
 });
 
 describe("POST /v1/analyses idempotency", () => {

@@ -60,21 +60,79 @@ resource "aws_iam_role" "github_actions_deploy" {
 
 # Terraformが本プロジェクトのリソース(dynamodb.tf, s3.tf, sqs.tf, iam.tf, lambda.tf,
 # apigateway.tf, cognito.tf, sqs.tf内のSNS)を作成・更新・削除できる範囲に絞った権限。
-# IAMまわりだけは「プロジェクト名プレフィックスを持つロール/ポリシーのみ」に限定し、
-# 他プロジェクトのIAMリソースやアカウント全体の管理権限には触れられないようにする。
+#
+# サービスごとに、ARNがプロジェクト名プレフィックス("fridgenote-*")で予測可能なものは
+# Resourceを絞り込む。一方でAPI Gateway(API ID)・Cognito(User Pool ID)は
+# 作成時にAWSが採番するIDがARNに含まれるため名前プレフィックスでの事前制限ができず、
+# かつ多くのアクションがそもそもResource-levelパーミッションに未対応(Resource: "*" 必須)
+# なので、その2つとBedrockの読み取り専用APIのみ明示的にワイルドカードのままにしている。
+locals {
+  name_prefix = "${var.project_name}-*"
+  account_id  = data.aws_caller_identity.current.account_id
+}
+
 data "aws_iam_policy_document" "github_actions_deploy" {
   statement {
-    sid = "ManageAppResources"
+    sid     = "ManageDynamoDb"
+    actions = ["dynamodb:*"]
+    resources = [
+      "arn:aws:dynamodb:${var.aws_region}:${local.account_id}:table/${local.name_prefix}",
+      "arn:aws:dynamodb:${var.aws_region}:${local.account_id}:table/${local.name_prefix}/index/*",
+    ]
+  }
+
+  statement {
+    sid     = "ManageS3"
+    actions = ["s3:*"]
+    resources = [
+      "arn:aws:s3:::${local.name_prefix}",
+      "arn:aws:s3:::${local.name_prefix}/*",
+    ]
+  }
+
+  statement {
+    sid       = "ManageSqs"
+    actions   = ["sqs:*"]
+    resources = ["arn:aws:sqs:${var.aws_region}:${local.account_id}:${local.name_prefix}"]
+  }
+
+  statement {
+    sid       = "ManageLambda"
+    actions   = ["lambda:*"]
+    resources = ["arn:aws:lambda:${var.aws_region}:${local.account_id}:function:${local.name_prefix}"]
+  }
+
+  statement {
+    sid     = "ManageLogs"
+    actions = ["logs:*"]
+    resources = [
+      "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/aws/lambda/${local.name_prefix}",
+      "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/aws/lambda/${local.name_prefix}:*",
+      "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/aws/apigateway/${local.name_prefix}",
+      "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:/aws/apigateway/${local.name_prefix}:*",
+    ]
+  }
+
+  statement {
+    sid       = "ManageSns"
+    actions   = ["sns:*"]
+    resources = ["arn:aws:sns:${var.aws_region}:${local.account_id}:${local.name_prefix}"]
+  }
+
+  statement {
+    sid       = "ManageCloudWatchAlarms"
+    actions   = ["cloudwatch:*"]
+    resources = ["arn:aws:cloudwatch:${var.aws_region}:${local.account_id}:alarm:${local.name_prefix}"]
+  }
+
+  # API Gateway・Cognitoは採番されるリソースIDが事前に分からずARNを絞れないため、
+  # またBedrockの読み取り専用API(モデル一覧取得)はそもそもリソースを指定できないため、
+  # この3つのみアカウント全体に対する権限のまま残す。
+  statement {
+    sid = "ManageApiGatewayAndCognitoAndReadBedrock"
     actions = [
-      "dynamodb:*",
-      "s3:*",
-      "sqs:*",
-      "lambda:*",
       "apigateway:*",
       "cognito-idp:*",
-      "logs:*",
-      "sns:*",
-      "cloudwatch:*",
       "bedrock:GetFoundationModel",
       "bedrock:ListFoundationModels",
     ]

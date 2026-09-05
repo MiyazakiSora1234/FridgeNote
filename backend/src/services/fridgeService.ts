@@ -4,9 +4,10 @@ import {
   QueryCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
-import { ddb, TABLE_NAME } from "../lib/dynamo.js";
+import { ddb, isConditionalCheckFailed, TABLE_NAME } from "../lib/dynamo.js";
 import { NotFoundError } from "../lib/errors.js";
 import { newId } from "../lib/ids.js";
+import { Keys } from "../lib/keys.js";
 import { resolveIngredientId } from "./ingredientMaster.js";
 import type { ExpiryStatus, FridgeItem, RecipeAnalysis } from "../types/index.js";
 
@@ -21,17 +22,21 @@ export function computeExpiryStatus(expiresAt: string | null, now = new Date()):
   return "ok";
 }
 
-export async function listFridgeItems(
-  userId: string,
-): Promise<Array<FridgeItem & { expiryStatus: ExpiryStatus }>> {
+async function queryFridgeItems(userId: string): Promise<FridgeItem[]> {
   const res = await ddb.send(
     new QueryCommand({
       TableName: TABLE_NAME,
       KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
-      ExpressionAttributeValues: { ":pk": `USER#${userId}`, ":skPrefix": "ITEM#" },
+      ExpressionAttributeValues: { ":pk": Keys.user(userId), ":skPrefix": Keys.itemPrefix() },
     }),
   );
-  const items = (res.Items ?? []) as FridgeItem[];
+  return (res.Items ?? []) as FridgeItem[];
+}
+
+export async function listFridgeItems(
+  userId: string,
+): Promise<Array<FridgeItem & { expiryStatus: ExpiryStatus }>> {
+  const items = await queryFridgeItems(userId);
   return items
     .map((item) => ({ ...item, expiryStatus: computeExpiryStatus(item.expiresAt) }))
     .sort((a, b) => {
@@ -72,10 +77,10 @@ export async function createFridgeItem(
     new PutCommand({
       TableName: TABLE_NAME,
       Item: {
-        PK: `USER#${userId}`,
-        SK: `ITEM#${itemId}`,
-        GSI1PK: `USER#${userId}`,
-        GSI1SK: `EXPIRES#${item.expiresAt ?? "9999-99-99"}`,
+        PK: Keys.user(userId),
+        SK: Keys.item(itemId),
+        GSI1PK: Keys.user(userId),
+        GSI1SK: Keys.expires(item.expiresAt),
         ...item,
       },
     }),
@@ -102,14 +107,14 @@ export async function updateFridgeItem(
   if (patch.expiresAt !== undefined) {
     sets.push("expiresAt = :expiresAt", "GSI1SK = :gsi1sk");
     values[":expiresAt"] = patch.expiresAt;
-    values[":gsi1sk"] = `EXPIRES#${patch.expiresAt ?? "9999-99-99"}`;
+    values[":gsi1sk"] = Keys.expires(patch.expiresAt);
   }
 
   try {
     const res = await ddb.send(
       new UpdateCommand({
         TableName: TABLE_NAME,
-        Key: { PK: `USER#${userId}`, SK: `ITEM#${itemId}` },
+        Key: { PK: Keys.user(userId), SK: Keys.item(itemId) },
         UpdateExpression: `SET ${sets.join(", ")}`,
         ConditionExpression: "attribute_exists(PK)",
         ExpressionAttributeValues: values,
@@ -118,9 +123,7 @@ export async function updateFridgeItem(
     );
     return res.Attributes as FridgeItem;
   } catch (err) {
-    if ((err as { name?: string }).name === "ConditionalCheckFailedException") {
-      throw NotFoundError("fridge item not found");
-    }
+    if (isConditionalCheckFailed(err)) throw NotFoundError("fridge item not found");
     throw err;
   }
 }
@@ -130,14 +133,12 @@ export async function deleteFridgeItem(userId: string, itemId: string): Promise<
     await ddb.send(
       new DeleteCommand({
         TableName: TABLE_NAME,
-        Key: { PK: `USER#${userId}`, SK: `ITEM#${itemId}` },
+        Key: { PK: Keys.user(userId), SK: Keys.item(itemId) },
         ConditionExpression: "attribute_exists(PK)",
       }),
     );
   } catch (err) {
-    if ((err as { name?: string }).name === "ConditionalCheckFailedException") {
-      throw NotFoundError("fridge item not found");
-    }
+    if (isConditionalCheckFailed(err)) throw NotFoundError("fridge item not found");
     throw err;
   }
 }
@@ -150,6 +151,7 @@ export interface ConsumeResult {
 /**
  * 料理写真解析でユーザーが確定した「使用食材」を在庫から減算する。
  * 在庫が0以下になった場合は削除せずquantity=0として保持する(要件通り)。
+ * 各食材の在庫更新は別々のDynamoDBアイテムに対する独立した書き込みなので並列実行する。
  */
 export async function consumeIngredients(
   userId: string,
@@ -157,49 +159,63 @@ export async function consumeIngredients(
   dishName: string,
   consumedIngredients: Array<{ ingredientId: string; quantity: number; unit: string }>,
 ): Promise<ConsumeResult> {
-  const allItems = await ddb
-    .send(
-      new QueryCommand({
-        TableName: TABLE_NAME,
-        KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
-        ExpressionAttributeValues: { ":pk": `USER#${userId}`, ":skPrefix": "ITEM#" },
-      }),
-    )
-    .then((res) => (res.Items ?? []) as FridgeItem[]);
+  const allItems = await queryFridgeItems(userId);
+
+  // 各食材の更新は独立したDynamoDBアイテムへの書き込みなので並列実行するが、
+  // 結果配列は consumedIngredients の入力順を保つため、push ではなく
+  // 各タスクの戻り値を Promise.all 後に順序通り組み立てる。
+  type Outcome =
+    | { kind: "consumed"; ingredientId: string; newQuantity: number; name: string; quantity: number; unit: string }
+    | { kind: "skipped"; ingredientId: string; reason: string };
+
+  const outcomes: Outcome[] = await Promise.all(
+    consumedIngredients.map(async (consume): Promise<Outcome> => {
+      const match = allItems.find((i) => i.ingredientId === consume.ingredientId);
+      if (!match) {
+        return { kind: "skipped", ingredientId: consume.ingredientId, reason: "not_in_fridge" };
+      }
+      const newQuantity = Math.max(0, match.quantity - consume.quantity);
+      await ddb.send(
+        new UpdateCommand({
+          TableName: TABLE_NAME,
+          Key: { PK: Keys.user(userId), SK: Keys.item(match.itemId) },
+          UpdateExpression: "SET quantity = :q, updatedAt = :u",
+          ExpressionAttributeValues: { ":q": newQuantity, ":u": new Date().toISOString() },
+        }),
+      );
+      return {
+        kind: "consumed",
+        ingredientId: consume.ingredientId,
+        newQuantity,
+        name: match.name,
+        quantity: consume.quantity,
+        unit: consume.unit,
+      };
+    }),
+  );
 
   const result: ConsumeResult = { consumed: [], skipped: [] };
   const recipeIngredients: RecipeAnalysis["ingredients"] = [];
-
-  for (const consume of consumedIngredients) {
-    const match = allItems.find((i) => i.ingredientId === consume.ingredientId);
-    if (!match) {
-      result.skipped.push({ ingredientId: consume.ingredientId, reason: "not_in_fridge" });
+  for (const outcome of outcomes) {
+    if (outcome.kind === "skipped") {
+      result.skipped.push({ ingredientId: outcome.ingredientId, reason: outcome.reason });
       recipeIngredients.push({
-        ingredientId: consume.ingredientId,
-        name: consume.ingredientId,
+        ingredientId: outcome.ingredientId,
+        name: outcome.ingredientId,
         confidence: 1,
         consumed: false,
       });
-      continue;
+    } else {
+      result.consumed.push({ ingredientId: outcome.ingredientId, newQuantity: outcome.newQuantity });
+      recipeIngredients.push({
+        ingredientId: outcome.ingredientId,
+        name: outcome.name,
+        confidence: 1,
+        consumed: true,
+        consumedQuantity: outcome.quantity,
+        unit: outcome.unit,
+      });
     }
-    const newQuantity = Math.max(0, match.quantity - consume.quantity);
-    await ddb.send(
-      new UpdateCommand({
-        TableName: TABLE_NAME,
-        Key: { PK: `USER#${userId}`, SK: `ITEM#${match.itemId}` },
-        UpdateExpression: "SET quantity = :q, updatedAt = :u",
-        ExpressionAttributeValues: { ":q": newQuantity, ":u": new Date().toISOString() },
-      }),
-    );
-    result.consumed.push({ ingredientId: consume.ingredientId, newQuantity });
-    recipeIngredients.push({
-      ingredientId: consume.ingredientId,
-      name: match.name,
-      confidence: 1,
-      consumed: true,
-      consumedQuantity: consume.quantity,
-      unit: consume.unit,
-    });
   }
 
   const recipe: RecipeAnalysis = {
@@ -214,8 +230,8 @@ export async function consumeIngredients(
     new PutCommand({
       TableName: TABLE_NAME,
       Item: {
-        PK: `USER#${userId}`,
-        SK: `RECIPE#${sourceAnalysisId}`,
+        PK: Keys.user(userId),
+        SK: Keys.recipe(sourceAnalysisId),
         ...recipe,
       },
     }),
