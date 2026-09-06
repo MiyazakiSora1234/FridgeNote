@@ -5,18 +5,25 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.fridgenote.app",
       "infoPlist": {
         "NSCameraUsageDescription": "食材や料理を撮影して冷蔵庫に登録するためにカメラを使用します。",
+        "NSPhotoLibraryUsageDescription": "食材や料理の写真をアルバムから選んで登録するために写真ライブラリを使用します。",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.fridgenote.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2E7D32"
+      },
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
       ]
     },
     "extra": {

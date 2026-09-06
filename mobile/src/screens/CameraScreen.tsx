@@ -1,8 +1,10 @@
 import React, { useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
+import type { AnalysisType } from "../types";
 import { prepareImageForUpload } from "../lib/imagePrep";
 import { getErrorMessage } from "../lib/getErrorMessage";
 import { api } from "../api/client";
@@ -11,11 +13,63 @@ import { colors, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Camera">;
 
+/** 撮影・アルバム選択どちらの経路でも同じアップロード〜解析開始フローを使う。 */
+async function uploadAndAnalyze(
+  uri: string,
+  analysisType: AnalysisType,
+  onDone: (analysisId: string) => void,
+): Promise<void> {
+  const prepared = await prepareImageForUpload(uri);
+  const { imageKey, uploadUrl } = await api.createPresignedUrl(prepared.contentType);
+  await api.uploadImageToS3(uploadUrl, prepared.uri, prepared.contentType);
+  const { analysisId } = await api.createAnalysis(imageKey, analysisType);
+  onDone(analysisId);
+}
+
 export function CameraScreen({ route, navigation }: Props) {
   const { analysisType } = route.params;
   const [permission, requestPermission] = useCameraPermissions();
   const [uploading, setUploading] = useState(false);
   const cameraRef = useRef<CameraView>(null);
+
+  const goToResult = (analysisId: string) => navigation.replace("AnalysisResult", { analysisId, analysisType });
+
+  const onCapture = async () => {
+    if (!cameraRef.current || uploading) return;
+    setUploading(true);
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      if (!photo) throw new Error("撮影に失敗しました");
+      await uploadAndAnalyze(photo.uri, analysisType, goToResult);
+    } catch (e) {
+      Alert.alert("アップロードに失敗しました", getErrorMessage(e));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onPickFromLibrary = async () => {
+    if (uploading) return;
+    const libraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!libraryPermission.granted) {
+      Alert.alert("写真ライブラリへのアクセスを許可してください");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets[0]) return;
+
+    setUploading(true);
+    try {
+      await uploadAndAnalyze(result.assets[0].uri, analysisType, goToResult);
+    } catch (e) {
+      Alert.alert("アップロードに失敗しました", getErrorMessage(e));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   if (!permission) return <View style={[styles.container, styles.center]} />;
 
@@ -31,29 +85,15 @@ export function CameraScreen({ route, navigation }: Props) {
             設定アプリ → FridgeNote → カメラ を有効にしてから、もう一度お試しください。
           </Text>
         )}
+        <Button
+          title="🖼️ アルバムから選ぶ"
+          variant="ghost"
+          onPress={onPickFromLibrary}
+          style={{ marginTop: spacing.md }}
+        />
       </View>
     );
   }
-
-  const onCapture = async () => {
-    if (!cameraRef.current || uploading) return;
-    setUploading(true);
-    try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
-      if (!photo) throw new Error("撮影に失敗しました");
-
-      const prepared = await prepareImageForUpload(photo.uri);
-      const { imageKey, uploadUrl } = await api.createPresignedUrl(prepared.contentType);
-      await api.uploadImageToS3(uploadUrl, prepared.uri, prepared.contentType);
-      const { analysisId } = await api.createAnalysis(imageKey, analysisType);
-
-      navigation.replace("AnalysisResult", { analysisId, analysisType });
-    } catch (e) {
-      Alert.alert("アップロードに失敗しました", getErrorMessage(e));
-    } finally {
-      setUploading(false);
-    }
-  };
 
   return (
     <View style={styles.container}>
@@ -73,9 +113,19 @@ export function CameraScreen({ route, navigation }: Props) {
             <ActivityIndicator size="large" color="#fff" />
           </View>
         ) : (
-          <TouchableOpacity accessibilityLabel="撮影する" onPress={onCapture} style={styles.shutterOuter}>
-            <View style={styles.shutterInner} />
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              accessibilityLabel="アルバムから選ぶ"
+              onPress={onPickFromLibrary}
+              style={styles.libraryButton}
+            >
+              <Text style={styles.libraryEmoji}>🖼️</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityLabel="撮影する" onPress={onCapture} style={styles.shutterOuter}>
+              <View style={styles.shutterInner} />
+            </TouchableOpacity>
+            <View style={styles.libraryButtonSpacer} />
+          </>
         )}
       </View>
     </View>
@@ -109,7 +159,9 @@ const styles = StyleSheet.create({
     bottom: 40,
     left: 0,
     right: 0,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-evenly",
   },
   shutterOuter: {
     width: 78,
@@ -126,4 +178,14 @@ const styles = StyleSheet.create({
     borderRadius: 31,
     backgroundColor: "#fff",
   },
+  libraryButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: colors.overlay,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  libraryButtonSpacer: { width: 52, height: 52 },
+  libraryEmoji: { fontSize: 24 },
 });
