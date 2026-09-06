@@ -3,7 +3,8 @@
   "compilerOptions": {
     "strict": true,
     "jsx": "react-native",
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    "module": "esnext"
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }

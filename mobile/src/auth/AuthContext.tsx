@@ -24,7 +24,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refresh();
+    // 起動時、永続化済みのトークンをメモリキャッシュへ復元してから
+    // セッション確認を行う(auth/tokenStorage.ts参照)。これを行わないと
+    // 有効なRefresh Tokenが端末に残っていても「未サインイン」判定され、
+    // アプリを開くたびにサインイン画面に戻ってしまう。
+    (async () => {
+      await CognitoAuth.hydrateCognitoStorage();
+      await refresh();
+    })();
   }, [refresh]);
 
   const signIn = useCallback(

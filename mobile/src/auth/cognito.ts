@@ -5,11 +5,24 @@ import {
   CognitoUserSession,
 } from "amazon-cognito-identity-js";
 import { config } from "../config";
+import { cognitoStorage, hydrateCognitoStorage } from "./tokenStorage";
+
+export { hydrateCognitoStorage };
 
 const userPool = new CognitoUserPool({
   UserPoolId: config.cognitoUserPoolId,
   ClientId: config.cognitoUserPoolClientId,
+  Storage: cognitoStorage,
 });
+
+/**
+ * amazon-cognito-identity-js の CognitoUser は `Storage` を渡さない限り
+ * Pool側のStorage設定を引き継がず独自にデフォルト実装へフォールバックしてしまうため、
+ * CognitoUserを生成する箇所では必ずここを経由して明示的に同じStorageを渡す。
+ */
+function newCognitoUser(email: string): CognitoUser {
+  return new CognitoUser({ Username: email, Pool: userPool, Storage: cognitoStorage });
+}
 
 function getSession(user: CognitoUser): Promise<CognitoUserSession> {
   return new Promise((resolve, reject) => {
@@ -30,7 +43,7 @@ export function signUp(email: string, password: string): Promise<void> {
 }
 
 export function confirmSignUp(email: string, code: string): Promise<void> {
-  const user = new CognitoUser({ Username: email, Pool: userPool });
+  const user = newCognitoUser(email);
   return new Promise((resolve, reject) => {
     user.confirmRegistration(code, true, (err) => {
       if (err) reject(err);
@@ -40,7 +53,7 @@ export function confirmSignUp(email: string, code: string): Promise<void> {
 }
 
 export function signIn(email: string, password: string): Promise<CognitoUserSession> {
-  const user = new CognitoUser({ Username: email, Pool: userPool });
+  const user = newCognitoUser(email);
   const authDetails = new AuthenticationDetails({ Username: email, Password: password });
 
   return new Promise((resolve, reject) => {
