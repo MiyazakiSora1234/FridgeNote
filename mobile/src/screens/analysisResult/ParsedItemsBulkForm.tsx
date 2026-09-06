@@ -6,7 +6,10 @@ import { AppTextInput } from "../../components/AppTextInput";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfidenceBar } from "../../components/ConfidenceBar";
+import { IngredientSuggestions } from "../../components/IngredientSuggestions";
 import { getErrorMessage } from "../../lib/getErrorMessage";
+import { isNonEmptyUnit, parsePositiveQuantity } from "../../lib/quantityValidation";
+import { useIngredientSuggestions } from "../../lib/useIngredientSuggestions";
 import { colors, spacing, typography } from "../../theme";
 import { LowConfidenceNotice } from "./LowConfidenceNotice";
 
@@ -47,8 +50,8 @@ export function ParsedItemsBulkForm({ analysisId, source, items, title, onDone }
       return;
     }
     for (const d of selected) {
-      const qty = Number(d.quantity);
-      if (!d.name.trim() || !Number.isFinite(qty) || qty <= 0 || !d.unit.trim()) {
+      const qty = parsePositiveQuantity(d.quantity);
+      if (!d.name.trim() || qty === null || !isNonEmptyUnit(d.unit)) {
         Alert.alert(`${d.name || "項目"} の内容を正しく入力してください`);
         return;
       }
@@ -60,7 +63,7 @@ export function ParsedItemsBulkForm({ analysisId, source, items, title, onDone }
         sourceAnalysisId: analysisId,
         items: selected.map((d) => ({
           ingredientName: d.name.trim(),
-          quantity: Number(d.quantity),
+          quantity: parsePositiveQuantity(d.quantity) ?? 0,
           unit: d.unit.trim(),
         })),
       });
@@ -80,40 +83,58 @@ export function ParsedItemsBulkForm({ analysisId, source, items, title, onDone }
       </Text>
 
       {drafts.map((d, i) => (
-        <Card key={`${d.ingredientId}-${i}`} style={[styles.itemCard, !d.checked && styles.itemCardOff]}>
-          <View style={styles.itemHeader}>
-            <Switch value={d.checked} onValueChange={(v) => update(i, { checked: v })} trackColor={{ true: colors.primary }} />
-            <AppTextInput
-              style={styles.nameInput}
-              value={d.name}
-              onChangeText={(v) => update(i, { name: v })}
-              placeholder="食材名"
-            />
-          </View>
-          <ConfidenceBar confidence={d.confidence} />
-          <LowConfidenceNotice confidence={d.confidence} />
-          {d.checked && (
-            <View style={styles.itemInputs}>
-              <AppTextInput
-                style={styles.inputSmall}
-                value={d.quantity}
-                onChangeText={(v) => update(i, { quantity: v })}
-                keyboardType="numeric"
-                placeholder="数量"
-              />
-              <AppTextInput
-                style={styles.inputSmall}
-                value={d.unit}
-                onChangeText={(v) => update(i, { unit: v })}
-                placeholder="単位(g/個等)"
-              />
-            </View>
-          )}
-        </Card>
+        <ParsedItemRow key={`${d.ingredientId}-${i}`} draft={d} onChange={(patch) => update(i, patch)} />
       ))}
 
       <Button title={submitting ? "追加中..." : "すべて追加する"} onPress={onConfirm} loading={submitting} />
     </ScrollView>
+  );
+}
+
+/**
+ * 1行分(1食材候補分)の表示・編集。食材名のオートコンプリート(useIngredientSuggestions)は
+ * 行ごとに独立した検索状態を持つ必要があり、フックをmap()のコールバック内で直接呼べないため、
+ * この単位でコンポーネントとして切り出している。
+ */
+function ParsedItemRow({ draft, onChange }: { draft: ItemDraft; onChange: (patch: Partial<ItemDraft>) => void }) {
+  const suggestions = useIngredientSuggestions(draft.name);
+
+  return (
+    <Card style={[styles.itemCard, !draft.checked && styles.itemCardOff]}>
+      <View style={styles.itemHeader}>
+        <Switch
+          value={draft.checked}
+          onValueChange={(v) => onChange({ checked: v })}
+          trackColor={{ true: colors.primary }}
+        />
+        <AppTextInput
+          style={styles.nameInput}
+          value={draft.name}
+          onChangeText={(v) => onChange({ name: v })}
+          placeholder="食材名"
+        />
+      </View>
+      <IngredientSuggestions suggestions={suggestions} onSelect={(name) => onChange({ name })} />
+      <ConfidenceBar confidence={draft.confidence} />
+      <LowConfidenceNotice confidence={draft.confidence} />
+      {draft.checked && (
+        <View style={styles.itemInputs}>
+          <AppTextInput
+            style={styles.inputSmall}
+            value={draft.quantity}
+            onChangeText={(v) => onChange({ quantity: v })}
+            keyboardType="numeric"
+            placeholder="数量"
+          />
+          <AppTextInput
+            style={styles.inputSmall}
+            value={draft.unit}
+            onChangeText={(v) => onChange({ unit: v })}
+            placeholder="単位(g/個等)"
+          />
+        </View>
+      )}
+    </Card>
   );
 }
 

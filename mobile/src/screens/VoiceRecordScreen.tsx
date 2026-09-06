@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Audio } from "expo-av";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -19,6 +19,15 @@ const AUDIO_CONTENT_TYPE = "audio/m4a";
 export function VoiceRecordScreen({ navigation }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const recordingRef = useRef<Audio.Recording | null>(null);
+
+  // 録音中に画面を離れた(戻る操作・別画面への遷移)場合、Recordingを解放しないまま
+  // コンポーネントが破棄されるとマイクリソースが握られたままになる。
+  // アンマウント時に録音中であれば必ず停止・解放する。
+  useEffect(() => {
+    return () => {
+      recordingRef.current?.stopAndUnloadAsync().catch(() => undefined);
+    };
+  }, []);
 
   const onStart = async () => {
     const permission = await Audio.requestPermissionsAsync();

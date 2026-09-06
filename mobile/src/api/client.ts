@@ -131,8 +131,10 @@ export const api = {
     items: Array<{ ingredientName: string; quantity: number; unit: string }>;
   }) => request("/v1/fridge/items/bulk", { method: "POST", body: input }, BulkCreateFridgeItemsResponseSchema),
 
-  updateFridgeItem: (itemId: string, patch: { quantity?: number; unit?: string; expiresAt?: string | null }) =>
-    request(`/v1/fridge/items/${itemId}`, { method: "PATCH", body: patch }, FridgeItemSchema),
+  updateFridgeItem: (
+    itemId: string,
+    patch: { quantity?: number; decrementBy?: number; unit?: string; expiresAt?: string | null },
+  ) => request(`/v1/fridge/items/${itemId}`, { method: "PATCH", body: patch }, FridgeItemSchema),
 
   deleteFridgeItem: (itemId: string) => requestVoid(`/v1/fridge/items/${itemId}`, { method: "DELETE" }),
 

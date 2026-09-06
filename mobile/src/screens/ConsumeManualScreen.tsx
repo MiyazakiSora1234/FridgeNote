@@ -4,24 +4,30 @@ import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import type { FridgeItem } from "../types";
-import { api } from "../api/client";
+import { api, ApiClientError } from "../api/client";
 import { AppTextInput } from "../components/AppTextInput";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { getErrorMessage } from "../lib/getErrorMessage";
+import { parsePositiveQuantity } from "../lib/quantityValidation";
 import { colors, spacing, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ConsumeManual">;
 
 /**
  * AIを使わず、既存の在庫一覧から数量を自分で入力して減らすための画面。
- * 新しいAPIは作らず、既存の PATCH /v1/fridge/items/:id (quantity更新)をそのまま使う
- * (「使った分を引き算する」という操作自体は既存APIの責務の範囲内のため)。
+ * 新しいAPIは作らず、既存の PATCH /v1/fridge/items/:id をそのまま使うが、
+ * 「現在値を読んでからquantityとして上書き」ではなく`decrementBy`を渡す
+ * (サーバー側でDynamoDBのADD式により原子的に減算されるため、複数端末から
+ * 同時に呼ばれても減算が失われない)。
  */
 export function ConsumeManualScreen(_props: Props) {
   const [items, setItems] = useState<FridgeItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  // 行ごとの送信中フラグ。サーバー側は原子的な減算になったが、それでも
+  // 同じ行への二重タップで同じ内容のリクエストが2回飛ぶのは無駄なので防ぐ。
+  const [submittingItemId, setSubmittingItemId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,21 +48,33 @@ export function ConsumeManualScreen(_props: Props) {
   );
 
   const onConsume = async (item: FridgeItem) => {
-    const amount = Number(amounts[item.itemId] ?? "");
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (submittingItemId) return; // 二重タップ防止(他の行の送信中も含めて多重実行しない)
+    const amount = parsePositiveQuantity(amounts[item.itemId] ?? "");
+    if (amount === null) {
       Alert.alert("減らす数量を入力してください");
       return;
     }
+    // 表示上の在庫超過チェック(即座にフィードバックするため)。最終的な整合性は
+    // サーバー側のConditionExpression(quantity >= 減らす量)が保証する。
     if (amount > item.quantity) {
       Alert.alert(`在庫(${item.quantity}${item.unit})を超えています`);
       return;
     }
+    setSubmittingItemId(item.itemId);
     try {
-      await api.updateFridgeItem(item.itemId, { quantity: item.quantity - amount });
+      await api.updateFridgeItem(item.itemId, { decrementBy: amount });
       setAmounts((prev) => ({ ...prev, [item.itemId]: "" }));
-      load();
+      await load();
     } catch (e) {
+      if (e instanceof ApiClientError && e.status === 409) {
+        // 表示していた在庫が古くなっていた(他端末での操作等)ケース。最新値を取り直す。
+        Alert.alert("在庫が変わっていたため減らせませんでした", "最新の在庫を確認してください");
+        await load();
+        return;
+      }
       Alert.alert("更新に失敗しました", getErrorMessage(e));
+    } finally {
+      setSubmittingItemId(null);
     }
   };
 
@@ -92,7 +110,14 @@ export function ConsumeManualScreen(_props: Props) {
               value={amounts[item.itemId] ?? ""}
               onChangeText={(v) => setAmounts((prev) => ({ ...prev, [item.itemId]: v }))}
             />
-            <Button title="減らす" onPress={() => onConsume(item)} fullWidth={false} style={styles.consumeButton} />
+            <Button
+              title="減らす"
+              onPress={() => onConsume(item)}
+              loading={submittingItemId === item.itemId}
+              disabled={submittingItemId !== null}
+              fullWidth={false}
+              style={styles.consumeButton}
+            />
           </Card>
         )}
       />

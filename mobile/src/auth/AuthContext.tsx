@@ -6,7 +6,7 @@ interface AuthContextValue {
   isSignedIn: boolean;
   email: string | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -42,8 +42,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
-  const signOut = useCallback(() => {
-    CognitoAuth.signOut();
+  const signOut = useCallback(async () => {
+    await CognitoAuth.signOut();
     setIsSignedIn(false);
     setEmail(null);
   }, []);

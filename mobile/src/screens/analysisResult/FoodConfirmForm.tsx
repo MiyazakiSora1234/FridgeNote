@@ -8,7 +8,10 @@ import { LabeledTextInput } from "../../components/LabeledTextInput";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfidenceBar } from "../../components/ConfidenceBar";
+import { IngredientSuggestions } from "../../components/IngredientSuggestions";
 import { getErrorMessage } from "../../lib/getErrorMessage";
+import { isNonEmptyUnit, parsePositiveQuantity } from "../../lib/quantityValidation";
+import { useIngredientSuggestions } from "../../lib/useIngredientSuggestions";
 import { colors, spacing, typography } from "../../theme";
 import { LowConfidenceNotice } from "./LowConfidenceNotice";
 
@@ -25,10 +28,11 @@ export function FoodConfirmForm({ analysisId, result, navigation }: Props) {
   const [unit, setUnit] = useState(result.unit);
   const [expiresAt, setExpiresAt] = useState(result.expiresAtEstimate ?? "");
   const [submitting, setSubmitting] = useState(false);
+  const suggestions = useIngredientSuggestions(name);
 
   const onConfirm = async () => {
-    const quantityNum = Number(quantity);
-    if (!name.trim() || !Number.isFinite(quantityNum) || quantityNum <= 0 || !unit.trim()) {
+    const quantityNum = parsePositiveQuantity(quantity);
+    if (!name.trim() || quantityNum === null || !isNonEmptyUnit(unit)) {
       Alert.alert("入力内容を確認してください");
       return;
     }
@@ -59,6 +63,7 @@ export function FoodConfirmForm({ analysisId, result, navigation }: Props) {
         <ConfidenceBar confidence={result.confidence} />
 
         <LabeledTextInput label="食材名" value={name} onChangeText={setName} style={styles.gap} />
+        <IngredientSuggestions suggestions={suggestions} onSelect={setName} />
         <LabeledTextInput label="数量" value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
         <LabeledTextInput label="単位" value={unit} onChangeText={setUnit} />
         <LabeledTextInput

@@ -43,7 +43,7 @@ export function CameraScreen({ route, navigation }: Props) {
   const [uploading, setUploading] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
-  const goToResult = (analysisId: string) => navigation.replace("AnalysisResult", { analysisId, analysisType });
+  const goToResult = (analysisId: string) => navigation.replace("AnalysisResult", { analysisId });
 
   const onCapture = async () => {
     if (!cameraRef.current || uploading) return;

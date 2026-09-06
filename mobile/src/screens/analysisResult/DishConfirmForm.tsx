@@ -9,6 +9,7 @@ import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfidenceBar } from "../../components/ConfidenceBar";
 import { getErrorMessage } from "../../lib/getErrorMessage";
+import { isNonEmptyUnit, parsePositiveQuantity } from "../../lib/quantityValidation";
 import { colors, spacing, typography } from "../../theme";
 import { LowConfidenceNotice } from "./LowConfidenceNotice";
 
@@ -46,8 +47,8 @@ export function DishConfirmForm({ analysisId, dish, ingredients, navigation }: P
       return;
     }
     for (const d of selected) {
-      const qty = Number(d.quantity);
-      if (!Number.isFinite(qty) || qty <= 0 || !d.unit.trim()) {
+      const qty = parsePositiveQuantity(d.quantity);
+      if (qty === null || !isNonEmptyUnit(d.unit)) {
         Alert.alert(`${d.name} の数量・単位を正しく入力してください`);
         return;
       }
@@ -58,7 +59,7 @@ export function DishConfirmForm({ analysisId, dish, ingredients, navigation }: P
         sourceAnalysisId: analysisId,
         consumedIngredients: selected.map((d) => ({
           ingredientId: d.ingredientId,
-          quantity: Number(d.quantity),
+          quantity: parsePositiveQuantity(d.quantity) ?? 0,
           unit: d.unit.trim(),
         })),
       });

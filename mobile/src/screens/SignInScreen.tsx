@@ -6,6 +6,7 @@ import { useAuth } from "../auth/AuthContext";
 import { AppTextInput } from "../components/AppTextInput";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { getErrorMessage } from "../lib/getErrorMessage";
 import { colors, spacing, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SignIn">;
@@ -23,7 +24,7 @@ export function SignInScreen({ navigation }: Props) {
     try {
       await signIn(email.trim(), password);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "サインインに失敗しました");
+      setError(getErrorMessage(e) || "サインインに失敗しました");
     } finally {
       setSubmitting(false);
     }

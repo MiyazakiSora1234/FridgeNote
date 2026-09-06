@@ -6,7 +6,10 @@ import { api } from "../api/client";
 import { LabeledTextInput } from "../components/LabeledTextInput";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { IngredientSuggestions } from "../components/IngredientSuggestions";
 import { getErrorMessage } from "../lib/getErrorMessage";
+import { isNonEmptyUnit, parsePositiveQuantity } from "../lib/quantityValidation";
+import { useIngredientSuggestions } from "../lib/useIngredientSuggestions";
 import { colors, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AddItemManual">;
@@ -17,10 +20,11 @@ export function AddItemManualScreen({ navigation }: Props) {
   const [unit, setUnit] = useState("個");
   const [expiresAt, setExpiresAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const suggestions = useIngredientSuggestions(name);
 
   const onSubmit = async () => {
-    const quantityNum = Number(quantity);
-    if (!name.trim() || !Number.isFinite(quantityNum) || quantityNum <= 0 || !unit.trim()) {
+    const quantityNum = parsePositiveQuantity(quantity);
+    if (!name.trim() || quantityNum === null || !isNonEmptyUnit(unit)) {
       Alert.alert("入力内容を確認してください");
       return;
     }
@@ -44,6 +48,7 @@ export function AddItemManualScreen({ navigation }: Props) {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Card>
         <LabeledTextInput label="食材名" value={name} onChangeText={setName} placeholder="例: トマト" />
+        <IngredientSuggestions suggestions={suggestions} onSelect={setName} />
         <LabeledTextInput label="数量" value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
         <LabeledTextInput label="単位" value={unit} onChangeText={setUnit} placeholder="例: 個 / g / ml" />
         <LabeledTextInput

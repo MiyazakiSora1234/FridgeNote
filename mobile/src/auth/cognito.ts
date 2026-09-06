@@ -64,9 +64,29 @@ export function signIn(email: string, password: string): Promise<CognitoUserSess
   });
 }
 
-export function signOut(): void {
+/**
+ * ローカルのセッション破棄に加え、Cognitoの GlobalSignOut API でサーバー側の
+ * Refresh Tokenも失効させる(以前はローカル破棄のみで、端末に残ったRefresh Token自体は
+ * 有効期限(30日、infra/cognito.tf)まで生き続けていた)。
+ * globalSignOutはベストエフォート: オフライン等で失敗しても、ユーザーが
+ * 「サインアウトできない」状態になる方が体験として悪いため、ローカルの破棄は必ず行う。
+ */
+export async function signOut(): Promise<void> {
   const user = userPool.getCurrentUser();
-  user?.signOut();
+  if (!user) return;
+  try {
+    await getSession(user); // globalSignOutにはsignInUserSession(AccessToken)の確立が必要
+    await new Promise<void>((resolve) => {
+      user.globalSignOut({
+        onSuccess: () => resolve(),
+        onFailure: () => resolve(),
+      });
+    });
+  } catch {
+    // セッション確立自体に失敗(オフライン等)。ローカルのサインアウトは続行する。
+  } finally {
+    user.signOut();
+  }
 }
 
 /**

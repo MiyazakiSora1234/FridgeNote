@@ -6,6 +6,7 @@ import { confirmSignUp, signUp } from "../auth/cognito";
 import { AppTextInput } from "../components/AppTextInput";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { getErrorMessage } from "../lib/getErrorMessage";
 import { colors, spacing, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SignUp">;
@@ -25,7 +26,7 @@ export function SignUpScreen({ navigation }: Props) {
       await signUp(email.trim(), password);
       setStep("confirm");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "登録に失敗しました");
+      setError(getErrorMessage(e) || "登録に失敗しました");
     } finally {
       setSubmitting(false);
     }
@@ -38,7 +39,7 @@ export function SignUpScreen({ navigation }: Props) {
       await confirmSignUp(email.trim(), code.trim());
       navigation.replace("SignIn");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "確認コードが正しくありません");
+      setError(getErrorMessage(e) || "確認コードが正しくありません");
     } finally {
       setSubmitting(false);
     }

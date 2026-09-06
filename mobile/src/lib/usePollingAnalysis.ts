@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 
 const DEFAULT_INTERVAL_MS = 3000;
 const DEFAULT_MAX_POLLS = 30; // 約90秒でタイムアウト扱いにする
@@ -23,12 +24,22 @@ export function usePollingAnalysis<T extends { status: string }>(
 
   useEffect(() => {
     let cancelled = false;
+    // アプリがバックグラウンドに回っている間にポーリングが1回分「見送られた」ことを示す。
+    // フォアグラウンド復帰時、このフラグが立っていれば即座に再開する。
+    let deferredWhileBackground = false;
     pollCount.current = 0;
     setData(null);
     setTimedOut(false);
     setError(null);
 
     const poll = async () => {
+      if (cancelled) return;
+      if (AppState.currentState !== "active") {
+        // バックグラウンド中はfetch自体を行わない(無駄なAPIコール・電池消費を避ける)。
+        // 次のタイマーは張らず、フォアグラウンド復帰時のAppStateリスナーに再開を任せる。
+        deferredWhileBackground = true;
+        return;
+      }
       try {
         const result = await fetcher();
         if (cancelled) return;
@@ -45,9 +56,18 @@ export function usePollingAnalysis<T extends { status: string }>(
         if (!cancelled) setError(e);
       }
     };
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" && deferredWhileBackground && !cancelled) {
+        deferredWhileBackground = false;
+        poll();
+      }
+    });
+
     poll();
     return () => {
       cancelled = true;
+      subscription.remove();
     };
     // fetcher/options は呼び出し側でインライン生成されがちで参照が毎回変わるため、
     // 依存配列は呼び出し側が明示的に渡す deps (analysisIdなど) だけを使う。
