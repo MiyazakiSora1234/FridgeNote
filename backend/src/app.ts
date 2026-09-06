@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import type { AppEnv } from "./middleware/auth.js";
 import { requireAuth } from "./middleware/auth.js";
 import { ApiError } from "./lib/errors.js";
+import { logger } from "./lib/logger.js";
 import { imagesRoute } from "./routes/images.js";
 import { analysesRoute } from "./routes/analyses.js";
 import { fridgeRoute } from "./routes/fridge.js";
@@ -15,9 +16,10 @@ app.use("*", cors());
 
 app.onError((err, c) => {
   if (err instanceof ApiError) {
+    logger.warn("api_error", { err, path: c.req.path, method: c.req.method, code: err.code, status: err.status });
     return c.json({ error: { code: err.code, message: err.message } }, err.status as 400);
   }
-  console.error("unhandled error", err);
+  logger.error("unhandled_error", { err, path: c.req.path, method: c.req.method });
   return c.json({ error: { code: "INTERNAL_ERROR", message: "internal server error" } }, 500);
 });
 

@@ -39,6 +39,7 @@ vi.mock("../../src/services/ai/bedrockToolInvoker.js", () => ({
 const { handler } = await import("../../src/handlers/analyzerWorker.js");
 const { __resetIngredientCacheForTests } = await import("../../src/services/ingredientMaster.js");
 const { deterministicIdFromKey } = await import("../../src/lib/ids.js");
+const { AiFatalError } = await import("../../src/services/ai/errors.js");
 
 function s3EventSqsRecord(bucket: string, key: string, messageId = "msg-1") {
   return {
@@ -127,6 +128,25 @@ describe("analyzerWorker: voice analysis", () => {
     const stored = fakeDdb.store.get(`USER#${userId}#VOICE#${analysisId}`);
     expect(stored?.status).toBe("failed");
     expect(stored?.errorReason).toBe("ai_response_invalid");
+  });
+
+  it("marks the voice analysis as failed and does NOT redeliver via SQS when Bedrock hits a fatal error (e.g. daily token quota exceeded)", async () => {
+    mockInvokeBedrockTool.mockRejectedValueOnce(
+      new AiFatalError("Bedrock invocation failed fatally (bedrock_quota_exceeded)", "bedrock_quota_exceeded"),
+    );
+
+    const userId = "user-1";
+    const audioKey = `users/${userId}/audio/clip5.m4a`;
+    const analysisId = seedPendingVoice(userId, audioKey);
+
+    const response = await handler({
+      Records: [s3EventSqsRecord("fridgenote-images", audioKey, "msg-fatal")],
+    });
+
+    expect(response.batchItemFailures).toEqual([]);
+    const stored = fakeDdb.store.get(`USER#${userId}#VOICE#${analysisId}`);
+    expect(stored?.status).toBe("failed");
+    expect(stored?.errorReason).toBe("bedrock_quota_exceeded");
   });
 
   it("retries (batch item failure) when Transcribe fails transiently, without touching fridge inventory", async () => {

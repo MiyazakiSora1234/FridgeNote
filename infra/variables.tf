@@ -67,3 +67,13 @@ variable "cloudtrail_log_retention_days" {
   type        = number
   default     = 90
 }
+
+variable "log_level" {
+  description = "backend/src/lib/logger.ts のログレベル(debug/info/warn/error)。障害調査時にコード変更・再デプロイなしで一時的にdebugへ上げられるよう、Terraform変数として外出しする。"
+  type        = string
+  default     = "info"
+  validation {
+    condition     = contains(["debug", "info", "warn", "error"], var.log_level)
+    error_message = "log_level must be one of: debug, info, warn, error."
+  }
+}

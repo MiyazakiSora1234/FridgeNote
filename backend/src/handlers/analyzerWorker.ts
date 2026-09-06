@@ -18,8 +18,9 @@ import {
 import { getObjectAsBase64, s3UriFor, transcribeMediaFormatFor } from "../services/s3.js";
 import { resolveIngredientId } from "../services/ingredientMaster.js";
 import { normalizeParsedItems } from "../services/parsedItemsNormalization.js";
+import { logger, type Logger } from "../lib/logger.js";
 import { BedrockVisionAdapter } from "../services/ai/BedrockVisionAdapter.js";
-import { AiResponseInvalidError } from "../services/ai/errors.js";
+import { AiFatalError, AiResponseInvalidError } from "../services/ai/errors.js";
 import { TextractOcrService } from "../services/ai/OcrService.js";
 import { BedrockReceiptAnalysisService } from "../services/ai/ReceiptAnalysisService.js";
 import { TranscribeTranscriptionService } from "../services/ai/TranscriptionService.js";
@@ -54,83 +55,97 @@ const voiceAnalysisService = new BedrockVoiceAnalysisService();
  */
 export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
   const batchItemFailures: SQSBatchItemFailure[] = [];
+  logger.info("analyzer_worker_batch_started", { recordCount: event.Records.length });
 
   for (const record of event.Records) {
+    const log = logger.child({ messageId: record.messageId });
     try {
-      await processRecord(record);
+      await processRecord(record, log);
     } catch (err) {
-      console.error("failed to process record", record.messageId, err);
+      log.error("record_processing_failed_will_be_redelivered", { err });
       batchItemFailures.push({ itemIdentifier: record.messageId });
     }
   }
 
+  logger.info("analyzer_worker_batch_finished", {
+    recordCount: event.Records.length,
+    failureCount: batchItemFailures.length,
+  });
   return { batchItemFailures };
 }
 
-async function processRecord(record: SQSRecord): Promise<void> {
+async function processRecord(record: SQSRecord, log: Logger): Promise<void> {
   const s3Event = JSON.parse(record.body) as S3Event;
   for (const s3Record of s3Event.Records ?? []) {
-    await processS3Record(s3Record);
+    await processS3Record(s3Record, log);
   }
 }
 
-async function processS3Record(s3Record: S3EventRecord): Promise<void> {
+async function processS3Record(s3Record: S3EventRecord, log: Logger): Promise<void> {
   const key = decodeURIComponent(s3Record.s3.object.key.replace(/\+/g, " "));
 
   if (key.includes("/audio/")) {
-    await processAudioRecord(key);
+    await processAudioRecord(key, log);
   } else {
-    await processImageRecord(key);
+    await processImageRecord(key, log);
   }
 }
 
-async function processImageRecord(imageKey: string): Promise<void> {
+async function processImageRecord(imageKey: string, parentLog: Logger): Promise<void> {
   const userId = userIdFromImageKey(imageKey);
   if (!userId) {
-    console.error("could not extract userId from imageKey, skipping", imageKey);
+    parentLog.error("image_key_userid_extraction_failed", { imageKey });
     return; // 想定外のキー形式。再試行しても直らないためスキップ(削除)
   }
 
   const analysisId = deterministicIdFromKey(imageKey);
+  const log = parentLog.child({ analysisId, userId, imageKey });
   const analysis = await getImageAnalysisRecordOrThrow(userId, analysisId);
 
   const started = await markProcessing(userId, analysisId);
   if (!started) {
-    console.log("analysis already processing/completed, skipping", analysisId);
+    log.info("image_analysis_already_processing_or_completed_skipping");
     return;
   }
 
+  log.info("image_analysis_started", { type: analysis.type });
   await runWithFailureHandling(
     async () => {
       const result = await analyzeByType(analysis);
       await completeAnalysis(userId, analysisId, result);
+      log.info("image_analysis_completed", { type: analysis.type });
     },
     (reason) => failAnalysis(userId, analysisId, reason),
+    log,
   );
 }
 
-async function processAudioRecord(audioKey: string): Promise<void> {
+async function processAudioRecord(audioKey: string, parentLog: Logger): Promise<void> {
   const userId = userIdFromAudioKey(audioKey);
   if (!userId) {
-    console.error("could not extract userId from audioKey, skipping", audioKey);
+    parentLog.error("audio_key_userid_extraction_failed", { audioKey });
     return;
   }
 
   const analysisId = deterministicIdFromKey(audioKey);
+  const log = parentLog.child({ analysisId, userId, audioKey });
   const analysis = await getVoiceAnalysisRecordOrThrow(userId, analysisId);
 
   const started = await markVoiceProcessing(userId, analysisId);
   if (!started) {
-    console.log("voice analysis already processing/completed, skipping", analysisId);
+    log.info("voice_analysis_already_processing_or_completed_skipping");
     return;
   }
 
+  log.info("voice_analysis_started");
   await runWithFailureHandling(
     async () => {
       const { transcript, items } = await analyzeVoice(analysis.audioKey);
       await completeVoiceAnalysis(userId, analysisId, transcript, items);
+      log.info("voice_analysis_completed", { itemCount: items.length, transcriptLength: transcript.length });
     },
     (reason) => failVoiceAnalysis(userId, analysisId, reason),
+    log,
   );
 }
 
@@ -232,23 +247,37 @@ async function analyzeVoice(audioKey: string): Promise<{ transcript: string; ite
 
 /**
  * 画像/音声どちらの解析でも共通のエラー分岐:
- * - AIレスポンスが構造的に不正 -> 再試行しても直らないため失敗確定し、DLQには送らない。
- * - それ以外(Bedrock/Textract/Transcribe呼び出し失敗・S3取得失敗等) -> 一過性の可能性が
- *   あるため再スローしてSQS再試行 -> 最終的にDLQ。
+ * - AIレスポンスが構造的に不正、または権限不足・入力不正・モデル不整合・日次トークン
+ *   クォータ超過など「リトライしても絶対に成功しない」と判定できたエラー(AiFatalError)
+ *   -> 再試行しても直らないため失敗確定し、例外を再スローしない(=SQS再配信させない。
+ *   再配信しても同じ理由で必ずまた失敗するだけで、Bedrock呼び出し回数だけを無駄に
+ *   増やしてしまうため。特に日次トークンクォータ超過時にこれをやると、
+ *   ただでさえ枯渇しているクォータをさらに消費してしまう)。
+ * - それ以外(Bedrock/Textract/Transcribe呼び出し失敗・S3取得失敗等の一過性エラー) ->
+ *   再スローしてSQS再試行 -> それでも直らなければ最終的にDLQ。
  * 以前はImageAnalysis用・VoiceAnalysis用で同じtry/catchを2箇所に書きそうになったため、
  * fail関数を引数として受け取る形で共通化した。
  */
-async function runWithFailureHandling(work: () => Promise<void>, fail: (reason: string) => Promise<void>): Promise<void> {
+async function runWithFailureHandling(
+  work: () => Promise<void>,
+  fail: (reason: string) => Promise<void>,
+  log: Logger,
+): Promise<void> {
   try {
     await work();
   } catch (err) {
     if (err instanceof AiResponseInvalidError) {
-      console.error("AI response invalid", err.message, err.raw);
+      log.error("ai_response_invalid", { err, raw: err.raw });
       await fail("ai_response_invalid");
       return;
     }
-    console.error("analysis failed, will retry", err);
-    await fail("processing_error").catch(() => undefined);
+    if (err instanceof AiFatalError) {
+      log.error("ai_fatal_error_not_retrying", { err, reason: err.reason });
+      await fail(err.reason);
+      return; // 再スローしない = このSQSメッセージは「処理済み」として扱われ、再配信されない
+    }
+    log.warn("analysis_failed_will_retry_via_sqs", { err });
+    await fail("processing_error").catch((failErr) => log.error("failed_to_record_failure_status", { err: failErr }));
     throw err;
   }
 }

@@ -137,10 +137,18 @@ Analyzer WorkerがS3オブジェクトキーのプレフィックス `users/{sub
 | 同じ画像の再送信 | `imageKey`ごとに一意の`analysisId`。既存レコードがあればそれを返す |
 | S3イベント重複配信 | 条件付き書き込みで2重処理を防止 |
 | SQS Visibility Timeout超過 | Lambdaのタイムアウト(30秒)より長く設定(90秒)。処理中に再受信されても冪等書き込みで実害なし |
-| Bedrock APIエラー/タイムアウト | 3回まで指数バックオフで再試行 → 最終失敗で`status=failed`、DLQには送らない(ユーザーへ「手動登録」を促す) |
+| Bedrockの一過性エラー(秒間ThrottlingException・タイムアウト等) | 3回まで指数バックオフ(300ms/600ms/1200ms)で再試行 → それでも失敗すれば`status=failed`(`errorReason`はprocessing_error)とし例外を再スロー → SQS再配信(最大3回)→ 最終的にDLQ |
+| Bedrockの致命的エラー(`AccessDeniedException`/`ValidationException`/`ResourceNotFoundException`/`UnrecognizedClientException`、および**日次トークンクォータ超過**=`ThrottlingException`で"Too many tokens per day"を含むもの) | **ローカルリトライすらせず即座に`AiFatalError`として`status=failed`**(`errorReason`は`bedrock_quota_exceeded`等の専用値)にし、**例外を再スローしない**(SQS再配信させない)。これらは何度リトライしても同じ理由で必ず失敗し、日次クォータ超過の場合は再配信のたびに枯渇したクォータをさらに消費してしまうため、他のThrottlingExceptionとは明確に区別している |
 | SQSメッセージ自体の処理異常(Lambda例外) | maxReceiveCount=3 → 超過でDLQへ。DLQ滞留数をCloudWatchでアラーム |
 | AIレスポンスのJSON不正 | Zodでバリデーション失敗 → `status=failed`理由を記録、DLQ送りにしない(再試行しても直らないため無限リトライを避ける) |
 | 重複ジョブ(同時に2つのSQSメッセージ) | DynamoDB条件付き書き込みで後勝ちを防止 |
+
+#### Bedrock呼び出し1回あたりの最大増幅の考え方
+
+「一過性エラー」はLambda内3回×SQS再配信3回=最大9回のBedrock呼び出しになり得るが、これは意図的な設計
+(一時的なリージョン障害等が数分後には回復している可能性に賭けた冗長性)。一方「致命的エラー」は
+上記の通りSQS再配信自体を起こさないため1回のS3イベントにつき最大1回のBedrock呼び出しで確定し、
+このクラスのエラーで無駄にAPIコール数・トークンを消費することはない。
 
 ## 4. AWS構成一覧とコスト試算(5ユーザー/月)
 
@@ -198,6 +206,32 @@ Bedrockを呼ぶ3つのService(Vision/Receipt/Voice)は、リトライ・タイ�
 
 将来、自前推論API(SageMaker等)や別のOCR/音声認識サービスに切り替える場合は、
 該当インターフェースを満たす別Adapterを追加し、DIで差し替えるのみで済む構成とする。
+
+## 7. ログ基盤(構造化ログ)
+
+以前は各所が `console.log("メッセージ", 値1, 値2)` のように自由形式でログを出しており、
+CloudWatch Logs Insightsで「特定のanalysisIdの一連の処理を追う」「エラー理由(errorReason)
+ごとに件数を集計する」といったクエリが書きづらかった。`backend/src/lib/logger.ts` に
+構造化ログ基盤を1本化し、API Lambda・Analyzer Worker Lambdaの両方から同じ形で使う。
+
+- **1行=1つのJSONオブジェクト**。`{ timestamp, level, message, functionName, ...文脈フィールド }`
+  という一貫した形式で出力し、CloudWatch Logs Insightsで `fields errorReason | stats count() by errorReason`
+  のような集計クエリが書けるようにする。
+- **`logger.child({ analysisId, userId, ... })`** で文脈を束縛した子ロガーを作れる。
+  Analyzer Workerでは1つの解析ジョブの処理開始時に `analysisId`/`userId`/`imageKey`(or `audioKey`)を
+  束縛した子ロガーを作り、以降そのジョブに関する全ログ行に自動的にこれらが付与されるようにしている
+  (呼び出しのたびに同じフィールドを書く手間・書き漏れを防ぐ)。
+- **ログレベルは`LOG_LEVEL`環境変数**(Terraform変数 `log_level`、既定`info`)で絞り込める。
+  障害調査時に `terraform apply -var="log_level=debug"` のようにコード変更・再デプロイなしで
+  詳細ログへ切り替えられる。
+- 依存ライブラリを追加しない(Lambdaのコールドスタート・バンドルサイズへの影響を避けるため、
+  pino/winston等は導入せず、標準の`console.log`/`console.error`へJSON文字列を渡すだけの実装)。
+- Bedrock呼び出しは `bedrockToolInvoker.ts` で試行ごとに `bedrock_invocation_succeeded` /
+  `bedrock_invocation_retrying` / `bedrock_invocation_fatal` 等のログを出し、`inputTokens`/
+  `outputTokens`/`durationMs`も記録する。Textract/Transcribeも同様に開始・成功・失敗をログに残す。
+  これにより「いつ・どのくらいの頻度で・どのエラー理由で」Bedrock呼び出しが失敗しているかを
+  CloudWatch Logs Insightsから追えるようにしている(今回のBedrock日次トークンクォータ超過調査を
+  踏まえた追加)。
 
 ### IngredientSearchServiceの段階的設計
 

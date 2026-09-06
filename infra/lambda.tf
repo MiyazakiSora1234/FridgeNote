@@ -42,6 +42,7 @@ resource "aws_lambda_function" "api" {
     variables = {
       TABLE_NAME         = aws_dynamodb_table.main.name
       IMAGES_BUCKET_NAME = aws_s3_bucket.images.bucket
+      LOG_LEVEL          = var.log_level
     }
   }
 
@@ -65,6 +66,7 @@ resource "aws_lambda_function" "worker" {
       IMAGES_BUCKET_NAME      = aws_s3_bucket.images.bucket
       BEDROCK_MODEL_ID        = var.bedrock_model_id
       AI_CONFIDENCE_THRESHOLD = tostring(var.ai_confidence_threshold)
+      LOG_LEVEL               = var.log_level
     }
   }
 

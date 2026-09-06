@@ -43,6 +43,7 @@ vi.mock("../../src/services/ai/bedrockToolInvoker.js", () => ({
 const { handler } = await import("../../src/handlers/analyzerWorker.js");
 const { __resetIngredientCacheForTests } = await import("../../src/services/ingredientMaster.js");
 const { deterministicIdFromKey } = await import("../../src/lib/ids.js");
+const { AiFatalError } = await import("../../src/services/ai/errors.js");
 
 function s3EventSqsRecord(bucket: string, key: string, messageId = "msg-1") {
   return {
@@ -136,6 +137,28 @@ describe("analyzerWorker: receipt analysis", () => {
     const stored = fakeDdb.store.get(`USER#${userId}#ANALYSIS#${analysisId}`);
     expect(stored?.status).toBe("failed");
     expect(stored?.errorReason).toBe("ai_response_invalid");
+  });
+
+  it("marks the analysis as failed and does NOT redeliver via SQS when Bedrock hits a fatal error (e.g. daily token quota exceeded)", async () => {
+    // AiFatalError(quota超過・権限エラー等)は再試行しても絶対に成功しないため、
+    // 通常のprocessing_errorとは異なり例外を再スローしない = SQS再配信させない
+    // (再配信すると、既に枯渇しているクォータをさらに消費してしまうため)。
+    mockInvokeBedrockTool.mockRejectedValueOnce(
+      new AiFatalError("Bedrock invocation failed fatally (bedrock_quota_exceeded)", "bedrock_quota_exceeded"),
+    );
+
+    const userId = "user-1";
+    const imageKey = `users/${userId}/uploads/receipt5.jpg`;
+    const analysisId = seedPendingReceipt(userId, imageKey);
+
+    const response = await handler({
+      Records: [s3EventSqsRecord("fridgenote-images", imageKey, "msg-fatal")],
+    });
+
+    expect(response.batchItemFailures).toEqual([]); // SQS再配信させない
+    const stored = fakeDdb.store.get(`USER#${userId}#ANALYSIS#${analysisId}`);
+    expect(stored?.status).toBe("failed");
+    expect(stored?.errorReason).toBe("bedrock_quota_exceeded");
   });
 
   it("reports the SQS message as a batch item failure (for retry) when OCR fails transiently", async () => {

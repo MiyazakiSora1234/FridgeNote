@@ -7,6 +7,7 @@ import {
   UpdateFridgeItemRequestSchema,
 } from "../schemas/apiSchemas.js";
 import { ValidationError, validationErrorFromZod } from "../lib/errors.js";
+import { logger } from "../lib/logger.js";
 import {
   consumeIngredients,
   createFridgeItem,
@@ -48,7 +49,7 @@ fridgeRoute.post("/items", async (c) => {
       quantity: body.data.quantity,
       unit: body.data.unit,
       expiresAt: body.data.expiresAt ?? null,
-    }).catch((err) => console.error("failed to record user feedback (non-fatal)", err));
+    }).catch((err) => logger.warn("record_user_feedback_failed_non_fatal", { err, userId, analysisId: body.data.sourceAnalysisId }));
   }
 
   return c.json(item, 201);
@@ -84,7 +85,9 @@ fridgeRoute.post("/items/bulk", async (c) => {
       body.data.source === "voice"
         ? recordVoiceUserFeedback(userId, body.data.sourceAnalysisId, feedback)
         : recordUserFeedback(userId, body.data.sourceAnalysisId, feedback);
-    await recordFeedback.catch((err) => console.error("failed to record user feedback (non-fatal)", err));
+    await recordFeedback.catch((err) =>
+      logger.warn("record_user_feedback_failed_non_fatal", { err, userId, analysisId: body.data.sourceAnalysisId }),
+    );
   }
 
   return c.json({ items }, 201);
@@ -141,7 +144,7 @@ fridgeRoute.post("/consume", async (c) => {
   await recordUserFeedback(userId, body.data.sourceAnalysisId, {
     type: "dish_consumed",
     consumedIngredients: body.data.consumedIngredients,
-  }).catch((err) => console.error("failed to record user feedback (non-fatal)", err));
+  }).catch((err) => logger.warn("record_user_feedback_failed_non_fatal", { err, userId, analysisId: body.data.sourceAnalysisId }));
 
   return c.json(result, 200);
 });

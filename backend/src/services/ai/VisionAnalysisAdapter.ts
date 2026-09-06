@@ -10,4 +10,4 @@ export interface VisionAIService {
   analyzeDishImage(input: { base64: string; contentType: string }): Promise<RawDishAnalysis>;
 }
 
-export { AiInvocationError, AiResponseInvalidError } from "./errors.js";
+export { AiFatalError, AiInvocationError, AiResponseInvalidError } from "./errors.js";
