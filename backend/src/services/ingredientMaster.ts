@@ -25,7 +25,8 @@ export function __resetIngredientCacheForTests(): void {
   cache = null;
 }
 
-async function loadAllIngredients(): Promise<Ingredient[]> {
+/** IngredientSearchService からも再利用するため export する。 */
+export async function loadAllIngredients(): Promise<Ingredient[]> {
   if (cache && cache.expiresAt > Date.now()) return cache.items;
 
   const items: Ingredient[] = [];

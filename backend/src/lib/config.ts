@@ -25,4 +25,13 @@ export const config = {
 
   /** コスト最優先の既定モデルがあるため未設定でも動作してよい。 */
   bedrockModelId: process.env.BEDROCK_MODEL_ID ?? "amazon.nova-lite-v1:0",
+
+  /**
+   * AI認識結果の確信度がこの値未満の場合、「認識結果を確認してください」扱いにする閾値。
+   * コードにハードコードせず環境変数で調整できるようにする(実際の認識精度を見ながら
+   * 現場でチューニングできるように)。モバイル側にも同名の閾値があるが、モバイルは
+   * ビルド時定数のため実行時には同期されない -> scripts/check-shared-constants.mjs で
+   * ドリフトを検知する運用(README参照)。
+   */
+  aiConfidenceThreshold: Number(process.env.AI_CONFIDENCE_THRESHOLD ?? "0.6"),
 };

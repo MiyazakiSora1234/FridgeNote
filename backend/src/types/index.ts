@@ -12,10 +12,10 @@ export interface FridgeItem {
   expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
-  source: "manual" | "image_food" | "image_dish_consume";
+  source: "manual" | "image_food" | "image_dish_consume" | "receipt" | "voice";
 }
 
-export type AnalysisType = "food" | "dish";
+export type AnalysisType = "food" | "dish" | "receipt";
 export type AnalysisStatus = "pending" | "processing" | "completed" | "failed";
 
 export interface FoodAnalysisResult {
@@ -41,7 +41,27 @@ export interface DishAnalysisResult {
   ingredients: DishAnalysisIngredient[];
 }
 
-export type AnalysisResult = FoodAnalysisResult | DishAnalysisResult;
+/**
+ * レシートOCR/音声認識、どちらも最終的に「食材名+数量+単位」のリストに正規化される。
+ * 同じ形にしておくことで、確認画面(チェックリスト+一括登録)のUIとバックエンドの
+ * 一括登録エンドポイントをレシート/音声の両方で共通利用できる。
+ */
+export interface ParsedIngredientItem {
+  name: string;
+  ingredientId: string;
+  quantity: number;
+  unit: string;
+  confidence: number;
+  /** AI_CONFIDENCE_THRESHOLD(lib/config.ts)を下回るかどうか。バックエンドで判定してから返す。 */
+  belowConfidenceThreshold: boolean;
+}
+
+export interface ReceiptAnalysisResult {
+  kind: "receipt";
+  items: ParsedIngredientItem[];
+}
+
+export type AnalysisResult = FoodAnalysisResult | DishAnalysisResult | ReceiptAnalysisResult;
 
 export interface ImageAnalysis {
   entityType: "ImageAnalysis";
@@ -51,6 +71,26 @@ export interface ImageAnalysis {
   type: AnalysisType;
   status: AnalysisStatus;
   result: AnalysisResult | null;
+  errorReason?: string;
+  userFeedback?: unknown;
+  createdAt: string;
+  updatedAt: string;
+  ttl?: number;
+}
+
+/**
+ * 音声入力は画像ではないため ImageAnalysis とは別エンティティにする
+ * (既存のImageAnalysisの形・テストに影響を与えないため)。
+ * ステータス遷移・冪等性・ユーザーフィードバック記録の考え方はImageAnalysisと共通。
+ */
+export interface VoiceAnalysis {
+  entityType: "VoiceAnalysis";
+  userId: string;
+  analysisId: string;
+  audioKey: string;
+  status: AnalysisStatus;
+  transcript?: string;
+  result: { items: ParsedIngredientItem[] } | null;
   errorReason?: string;
   userFeedback?: unknown;
   createdAt: string;

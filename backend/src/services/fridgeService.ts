@@ -94,6 +94,23 @@ export async function createFridgeItem(
   return item;
 }
 
+/**
+ * レシート/音声解析結果の「一括登録」用。createFridgeItemを並列実行するだけの薄いラッパーで、
+ * 食材正規化・キー組み立て等のロジックを重複させない。入力順を保って返す。
+ */
+export async function createFridgeItemsBulk(
+  userId: string,
+  inputs: Array<{
+    ingredientName: string;
+    quantity: number;
+    unit: string;
+    expiresAt?: string | null;
+    source?: FridgeItem["source"];
+  }>,
+): Promise<FridgeItem[]> {
+  return Promise.all(inputs.map((input) => createFridgeItem(userId, input)));
+}
+
 export async function updateFridgeItem(
   userId: string,
   itemId: string,

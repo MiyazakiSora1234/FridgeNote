@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../middleware/auth.js";
 import {
+  BulkCreateFridgeItemsRequestSchema,
   ConsumeRequestSchema,
   CreateFridgeItemRequestSchema,
   UpdateFridgeItemRequestSchema,
@@ -9,11 +10,13 @@ import { ValidationError, validationErrorFromZod } from "../lib/errors.js";
 import {
   consumeIngredients,
   createFridgeItem,
+  createFridgeItemsBulk,
   deleteFridgeItem,
   listFridgeItems,
   updateFridgeItem,
 } from "../services/fridgeService.js";
 import { getAnalysis, recordUserFeedback } from "../services/analysisService.js";
+import { recordVoiceUserFeedback } from "../services/voiceAnalysisService.js";
 
 export const fridgeRoute = new Hono<AppEnv>();
 
@@ -49,6 +52,42 @@ fridgeRoute.post("/items", async (c) => {
   }
 
   return c.json(item, 201);
+});
+
+/**
+ * レシート/音声の確認画面で「すべて追加」を押したときに呼ばれる一括登録。
+ * ユーザーがチェックを外した項目はこの時点で items に含めない(=登録しない)前提で、
+ * サーバー側は「渡されたものは全部登録する」だけのシンプルな責務にする。
+ */
+fridgeRoute.post("/items/bulk", async (c) => {
+  const body = BulkCreateFridgeItemsRequestSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!body.success) throw validationErrorFromZod(body.error);
+
+  const userId = c.get("userId");
+  const items = await createFridgeItemsBulk(
+    userId,
+    body.data.items.map((item) => ({
+      ingredientName: item.ingredientName,
+      quantity: item.quantity,
+      unit: item.unit,
+      expiresAt: item.expiresAt ?? null,
+      source: body.data.source,
+    })),
+  );
+
+  if (body.data.sourceAnalysisId) {
+    const feedback = {
+      type: `${body.data.source}_bulk_confirmed`,
+      items: body.data.items,
+    };
+    const recordFeedback =
+      body.data.source === "voice"
+        ? recordVoiceUserFeedback(userId, body.data.sourceAnalysisId, feedback)
+        : recordUserFeedback(userId, body.data.sourceAnalysisId, feedback);
+    await recordFeedback.catch((err) => console.error("failed to record user feedback (non-fatal)", err));
+  }
+
+  return c.json({ items }, 201);
 });
 
 fridgeRoute.patch("/items/:id", async (c) => {

@@ -61,9 +61,10 @@ resource "aws_lambda_function" "worker" {
 
   environment {
     variables = {
-      TABLE_NAME         = aws_dynamodb_table.main.name
-      IMAGES_BUCKET_NAME = aws_s3_bucket.images.bucket
-      BEDROCK_MODEL_ID   = var.bedrock_model_id
+      TABLE_NAME              = aws_dynamodb_table.main.name
+      IMAGES_BUCKET_NAME      = aws_s3_bucket.images.bucket
+      BEDROCK_MODEL_ID        = var.bedrock_model_id
+      AI_CONFIDENCE_THRESHOLD = tostring(var.ai_confidence_threshold)
     }
   }
 

@@ -46,6 +46,48 @@ export const DISH_ANALYSIS_JSON_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+/**
+ * レシートOCRテキスト・音声認識テキストのどちらも「食材名+数量+単位」の配列に
+ * 構造化してもらう点で同じ形。レシートの場合は食品以外の商品(洗剤等)を
+ * 除外するよう、プロンプト側で明示する(このJSON Schema自体はitemsの形だけを規定する)。
+ */
+const PARSED_ITEMS_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "食材名(日本語)" },
+          quantity: { type: "number", description: "個数または量" },
+          unit: { type: "string", description: "個/g/ml/pack など" },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+        },
+        required: ["name", "quantity", "unit", "confidence"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["items"],
+  additionalProperties: false,
+} as const;
+
+export const RECEIPT_ANALYSIS_JSON_SCHEMA = PARSED_ITEMS_JSON_SCHEMA;
+export const VOICE_ANALYSIS_JSON_SCHEMA = PARSED_ITEMS_JSON_SCHEMA;
+
+export const RawParsedItemSchema = z.object({
+  name: z.string().min(1).max(100),
+  quantity: z.number().finite().positive().max(100000),
+  unit: z.string().min(1).max(20),
+  confidence: z.number().min(0).max(1),
+});
+
+export const RawParsedItemsSchema = z.object({
+  items: z.array(RawParsedItemSchema).min(1).max(50),
+});
+export type RawParsedItems = z.infer<typeof RawParsedItemsSchema>;
+
 /** Bedrockの生レスポンス(正規化前)をバックエンドで検証するためのZodスキーマ */
 export const RawFoodAnalysisSchema = z.object({
   name: z.string().min(1).max(100),

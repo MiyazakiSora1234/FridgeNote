@@ -86,6 +86,20 @@ data "aws_iam_policy_document" "worker_lambda_policy" {
     ]
   }
   statement {
+    # レシートOCR用。DetectDocumentTextは同期APIでリソースレベル権限に非対応のため"*"必須。
+    sid       = "ExtractReceiptText"
+    actions   = ["textract:DetectDocumentText"]
+    resources = ["*"]
+  }
+  statement {
+    # 音声入力の文字起こし用。Start/GetいずれもTranscribeはリソースレベル権限に非対応で"*"必須。
+    # 出力先はAWS管理のデフォルトバケット(TranscriptFileUriをHTTP経由で取得)を使うため、
+    # 追加のS3バケット権限は不要。
+    sid       = "TranscribeAudio"
+    actions   = ["transcribe:StartTranscriptionJob", "transcribe:GetTranscriptionJob"]
+    resources = ["*"]
+  }
+  statement {
     sid = "ConsumeQueue"
     actions = [
       "sqs:ReceiveMessage",

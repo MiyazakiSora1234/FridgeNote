@@ -55,3 +55,15 @@ variable "github_actions_environment" {
   type        = string
   default     = "production"
 }
+
+variable "ai_confidence_threshold" {
+  description = "レシート/音声解析でAIが返す各食材候補のconfidenceがこの値未満の場合、一括追加チェックリストで既定非選択とする閾値。"
+  type        = number
+  default     = 0.6
+}
+
+variable "cloudtrail_log_retention_days" {
+  description = "CloudTrail証跡ログ(S3)を自動削除するまでの日数。監査目的の最小限の保持とし、ストレージコストを抑える。"
+  type        = number
+  default     = 90
+}

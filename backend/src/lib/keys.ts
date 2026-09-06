@@ -12,6 +12,8 @@ export const Keys = {
 
   analysis: (analysisId: string) => `ANALYSIS#${analysisId}`,
 
+  voiceAnalysis: (analysisId: string) => `VOICE#${analysisId}`,
+
   recipe: (analysisId: string) => `RECIPE#${analysisId}`,
 
   ingredient: (ingredientId: string) => `INGREDIENT#${ingredientId}`,

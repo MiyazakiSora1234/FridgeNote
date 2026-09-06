@@ -119,6 +119,14 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     resources = ["arn:aws:sns:${var.aws_region}:${local.account_id}:${local.name_prefix}"]
   }
 
+  # CloudTrail証跡の作成・更新用。証跡ログの保存先S3バケットは"ManageS3"の
+  # name_prefix("fridgenote-*")に一致するため別途の許可は不要。
+  statement {
+    sid       = "ManageCloudTrail"
+    actions   = ["cloudtrail:*"]
+    resources = ["arn:aws:cloudtrail:${var.aws_region}:${local.account_id}:trail/${local.name_prefix}"]
+  }
+
   statement {
     sid       = "ManageCloudWatchAlarms"
     actions   = ["cloudwatch:*"]
