@@ -35,31 +35,13 @@ import type {
   VoiceAnalysis,
 } from "../types/index.js";
 
-// AI Adapter層はすべてインターフェース越しに使う(Lambda内にBedrock/Textract/Transcribeの
-// SDK呼び出しを直書きしない)。テストではこれらをMock実装に差し替える。
 const visionAI = new BedrockVisionAdapter();
 const ocrService = new TextractOcrService();
 const receiptAnalysisService = new BedrockReceiptAnalysisService();
 const transcriptionService = new TranscribeTranscriptionService();
 const voiceAnalysisService = new BedrockVoiceAnalysisService();
 
-/**
- * S3イベント通知(ObjectCreated)を直接受け取るSQSキューのコンシューマ。
- * 画像(食材/料理/レシート)・音声(音声入力)のどちらもこの1つのキュー・1つの
- * Lambdaで処理する(S3キーのプレフィックスで振り分ける)。メディア種別ごとに
- * 別々のSQS/Lambdaを新設すると、5ユーザー規模には過剰な構成になり
- * コスト・運用の両面で不利なため。
- *
- * SQSのバッチ処理ではPartial Batch Response(batchItemFailures)を使い、
- * 1メッセージの失敗が他メッセージの再処理を巻き込まないようにする。
- */
-/**
- * infra/sqs.tf の analysis_queue.redrive_policy.maxReceiveCount と一致させること。
- * SQSの `ApproximateReceiveCount` がこの値に達した(=これが最後の配信試行)場合、
- * 「クライアントのPOST /v1/analyses(または/v1/voice/transcriptions)呼び出しが
- * 結局来なかった」レコード未作成状態を、もう再試行しても仕方ないと判断する材料に使う
- * (processImageRecord/processAudioRecordのコメント参照)。
- */
+// infra/sqs.tf の maxReceiveCount と一致させること。
 const SQS_MAX_RECEIVE_COUNT = 3;
 
 export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
@@ -105,13 +87,13 @@ async function processImageRecord(imageKey: string, receiveCount: number, parent
   const userId = userIdFromImageKey(imageKey);
   if (!userId) {
     parentLog.error("image_key_userid_extraction_failed", { imageKey });
-    return; // 想定外のキー形式。再試行しても直らないためスキップ(削除)
+    return;
   }
 
   const analysisId = deterministicIdFromKey(imageKey);
   const log = parentLog.child({ analysisId, userId, imageKey });
   const analysis = await getImageAnalysisRecordOrGiveUp(userId, analysisId, receiveCount, log);
-  if (!analysis) return; // レコードが最終的に見つからなかった(クライアントが途中で諦めた等) -> 諦める
+  if (!analysis) return;
 
   const started = await markProcessing(userId, analysisId);
   if (!started) {
@@ -161,18 +143,6 @@ async function processAudioRecord(audioKey: string, receiveCount: number, parent
   );
 }
 
-/**
- * クライアントの POST /v1/analyses (または /v1/voice/transcriptions) 呼び出しが
- * S3イベントより遅れて到着するレースコンディションに対応するため、レコードが
- * 見つからない場合はエラーをthrowしてSQSに再配信させる(Visibility Timeout経過後)。
- *
- * ただし、それでも最後の配信試行(ApproximateReceiveCount >= SQS_MAX_RECEIVE_COUNT)まで
- * 見つからない場合は、もはや「クライアントの呼び出しが少し遅れているだけ」ではなく、
- * ユーザーがアップロード後にアプリを閉じた・通信が切れた等で結局呼ばれなかった可能性が高いと
- * 判断し、例外を投げずnullを返す(=このS3イベントは諦めて正常終了として扱う)。
- * ここでthrowし続けてDLQへ送ってしまうと、実際には何も問題が起きていないのに
- * DLQ滞留アラームが発報され続け、本当の異常を見逃す原因(アラート疲れ)になるため。
- */
 async function getImageAnalysisRecordOrGiveUp(
   userId: string,
   analysisId: string,
@@ -237,10 +207,6 @@ async function analyzeDish(imageKey: string): Promise<DishAnalysisResult> {
   return { kind: "dish", dish: raw.dish, ingredients };
 }
 
-/**
- * レシート: 画像 → OCR(Textract) → テキストをBedrockへ渡して構造化 → 食材マスター正規化。
- * OCR結果をそのままFridgeItemにはしない(Schema Validation + ユーザー確認を必ず挟む)。
- */
 async function analyzeReceipt(imageKey: string): Promise<ReceiptAnalysisResult> {
   const { base64, contentType } = await getObjectAsBase64(imageKey);
   const ocrText = await ocrService.extractText({ base64, contentType });
@@ -260,13 +226,6 @@ async function analyzeByType(analysis: ImageAnalysis): Promise<AnalysisResult> {
   }
 }
 
-/**
- * 音声: S3上の音声 → Transcribe(音声はダウンロードせずS3 URIのまま渡す) → テキストを
- * Bedrockへ渡して構造化 → 食材マスター正規化。
- * TranscribeのジョブIDは呼び出しごとに一意にする(analysisIdをそのまま使うと、
- * 一時的な失敗でSQSが再配信してきた際に同名ジョブが既に存在してエラーになるため)。
- * 冪等性はTranscribe側ではなくDynamoDBのステータス管理(markVoiceProcessing)で担保する。
- */
 async function analyzeVoice(audioKey: string): Promise<{ transcript: string; items: ParsedIngredientItem[] }> {
   const jobName = `fridgenote-${deterministicIdFromKey(audioKey)}-${Date.now()}`;
   const transcript = await transcriptionService.transcribe({
@@ -279,19 +238,6 @@ async function analyzeVoice(audioKey: string): Promise<{ transcript: string; ite
   return { transcript, items };
 }
 
-/**
- * 画像/音声どちらの解析でも共通のエラー分岐:
- * - AIレスポンスが構造的に不正、または権限不足・入力不正・モデル不整合・日次トークン
- *   クォータ超過など「リトライしても絶対に成功しない」と判定できたエラー(AiFatalError)
- *   -> 再試行しても直らないため失敗確定し、例外を再スローしない(=SQS再配信させない。
- *   再配信しても同じ理由で必ずまた失敗するだけで、Bedrock呼び出し回数だけを無駄に
- *   増やしてしまうため。特に日次トークンクォータ超過時にこれをやると、
- *   ただでさえ枯渇しているクォータをさらに消費してしまう)。
- * - それ以外(Bedrock/Textract/Transcribe呼び出し失敗・S3取得失敗等の一過性エラー) ->
- *   再スローしてSQS再試行 -> それでも直らなければ最終的にDLQ。
- * 以前はImageAnalysis用・VoiceAnalysis用で同じtry/catchを2箇所に書きそうになったため、
- * fail関数を引数として受け取る形で共通化した。
- */
 async function runWithFailureHandling(
   work: () => Promise<void>,
   fail: (reason: string, options?: { terminal?: boolean }) => Promise<void>,
@@ -307,7 +253,7 @@ async function runWithFailureHandling(
     }
     if (err instanceof AiFatalError) {
       log.error("ai_fatal_error_not_retrying", { err, reason: err.reason });
-      await fail(err.reason, { terminal: true }); // 再スローしない = このSQSメッセージは「処理済み」として扱われ、再配信されない
+      await fail(err.reason, { terminal: true });
       return;
     }
     log.warn("analysis_failed_will_retry_via_sqs", { err });

@@ -7,15 +7,10 @@ import type { AnalysisResult, AnalysisType, ImageAnalysis } from "../types/index
 
 const ANALYSIS_TTL_DAYS = 90;
 
-/** この service 内で繰り返し使うPK/SKの組み立てをここに集約する。 */
 function analysisPrimaryKey(userId: string, analysisId: string) {
   return { PK: Keys.user(userId), SK: Keys.analysis(analysisId) };
 }
 
-/**
- * 解析ジョブを作成する。imageKeyから決定論的にanalysisIdを導出し、
- * 既に存在すればそれをそのまま返す(同一画像の再送信・多重APIコールへの冪等性)。
- */
 export async function createAnalysis(
   userId: string,
   imageKey: string,
@@ -70,20 +65,6 @@ export async function getAnalysis(userId: string, analysisId: string): Promise<I
   return res.Item as ImageAnalysis;
 }
 
-/**
- * Analyzer Workerが処理開始時に呼ぶ。
- * status=completedの場合のみスキップ(重複S3イベント/SQS再配信への冪等性)。
- * pending/processing/failedからは常にprocessingへ遷移できるようにし、
- * 一時的なエラーでSQSが再配信してきた際に正しくリトライできるようにする
- * (厳密にpendingからのみ遷移可とすると、1回目の失敗でfailedへ遷移した後の
- * 再配信がブロックされてしまい、リトライが機能しなくなるため)。
- *
- * 例外: terminallyFailed=true(failAnalysisにterminal:trueで記録された、
- * リトライしても絶対に成功しないと判定済みの失敗)の場合は、statusが"failed"でも
- * スキップする。通常はAiFatalErrorが例外を再スローしないためSQS再配信自体が
- * 起きないが、S3がまれに同一イベントを重複配信した場合(仕様上あり得る)に、
- * 別のSQSメッセージ経由で同じ無駄なBedrock呼び出しを繰り返さないための保険。
- */
 export async function markProcessing(userId: string, analysisId: string): Promise<boolean> {
   try {
     await ddb.send(
@@ -102,7 +83,7 @@ export async function markProcessing(userId: string, analysisId: string): Promis
     );
     return true;
   } catch (err) {
-    if (isConditionalCheckFailed(err)) return false; // 既に完了済み、または再試行しても直らない失敗 -> スキップ
+    if (isConditionalCheckFailed(err)) return false;
     throw err;
   }
 }
@@ -127,14 +108,6 @@ export async function completeAnalysis(
   );
 }
 
-/**
- * AIの認識結果に対してユーザーが実際に確定・修正した内容を記録する
- * (docs/architecture.md「将来のAI再学習データとして使えるよう保存する」に対応)。
- * AI結果(result)は書き換えず、userFeedbackに別枠で保持することで
- * 「AIの生出力」と「ユーザー確定値」を分離したまま両方追跡できるようにする。
- * 呼び出し元は補助的な記録として扱い、失敗してもメインの処理は止めないこと
- * (存在しない/他人のanalysisIdが渡ってきても本流の登録処理自体は失敗させたくないため)。
- */
 export async function recordUserFeedback(
   userId: string,
   analysisId: string,
@@ -151,11 +124,6 @@ export async function recordUserFeedback(
   );
 }
 
-/**
- * @param options.terminal リトライしても絶対に成功しないと判定済みの失敗(AiFatalError)の場合はtrue。
- *   `terminallyFailed`属性を立てることで、markProcessingが以後この解析を
- *   (稀なS3イベント重複配信経由であっても)再処理しないようにする。
- */
 export async function failAnalysis(
   userId: string,
   analysisId: string,
@@ -179,7 +147,6 @@ export async function failAnalysis(
   );
 }
 
-/** S3オブジェクトキーから userId を抽出する (`users/{sub}/uploads/{uuid}.jpg`)。 */
 export function userIdFromImageKey(imageKey: string): string | null {
   const match = /^users\/([^/]+)\/uploads\//.exec(imageKey);
   return match ? match[1] ?? null : null;

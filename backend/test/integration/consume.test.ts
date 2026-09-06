@@ -63,7 +63,6 @@ describe("POST /v1/fridge/consume", () => {
     const userId = "user-1";
     const env = authEnv(userId);
 
-    // 料理写真解析の完了結果を直接シードする(AI呼び出しはWorker側の責務のため統合テストの対象外)
     fakeDdb.store.set(`USER#${userId}#ANALYSIS#a1`, {
       PK: `USER#${userId}`,
       SK: "ANALYSIS#a1",
@@ -85,7 +84,6 @@ describe("POST /v1/fridge/consume", () => {
       updatedAt: "2026-09-01T00:00:00.000Z",
     });
 
-    // 冷蔵庫在庫: 鶏肉300gのみ保有(卵は在庫なし)
     fakeDdb.store.set(`USER#${userId}#ITEM#item_chicken`, {
       PK: `USER#${userId}`,
       SK: "ITEM#item_chicken",
@@ -181,12 +179,11 @@ describe("POST /v1/fridge/consume", () => {
     const first = await json(await call("/v1/fridge/consume", requestBody, env));
     expect(first.consumed).toEqual([{ ingredientId: "ing_chicken", newQuantity: 200 }]);
 
-    // 2回目呼び出し(二重タップ・クライアント側リトライを想定)。在庫はもう一度減らされてはいけない。
     const second = await json(await call("/v1/fridge/consume", requestBody, env));
     expect(second.consumed).toEqual([{ ingredientId: "ing_chicken", newQuantity: 200 }]);
 
     const chickenAfter = fakeDdb.store.get(`USER#${userId}#ITEM#item_chicken`);
-    expect(chickenAfter?.quantity).toBe(200); // 100を2回引いた0ではなく、1回分の200のまま
+    expect(chickenAfter?.quantity).toBe(200);
   });
 
   it("rejects consumedIngredients containing an ingredientId the AI never suggested for this dish", async () => {
@@ -215,7 +212,6 @@ describe("POST /v1/fridge/consume", () => {
       "/v1/fridge/consume",
       jsonRequest({
         sourceAnalysisId: "a1",
-        // ing_beef はAIの候補(鶏肉のみ)に含まれていない
         consumedIngredients: [{ ingredientId: "ing_beef", quantity: 100, unit: "g" }],
       }),
       env,
@@ -235,7 +231,7 @@ describe("POST /v1/fridge/consume", () => {
       analysisId: "a2",
       imageKey: `users/${userId}/uploads/dish2.jpg`,
       type: "dish",
-      status: "pending", // まだ解析中
+      status: "pending",
       result: null,
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",

@@ -10,27 +10,14 @@ import { AiInvocationError } from "./errors.js";
 const log = logger.child({ component: "TranscriptionService" });
 
 export interface TranscriptionService {
-  /** S3上の音声ファイルを文字起こしする。音声データ自体はLambdaへダウンロードせず、Transcribeへは S3 URI を渡す。 */
   transcribe(input: { s3Uri: string; mediaFormat: MediaFormat; jobName: string }): Promise<string>;
 }
 
 const client = new TranscribeClient({});
 
 const POLL_INTERVAL_MS = 2000;
-/**
- * Transcribeジョブの完了待ちに使ってよい時間の上限。Analyzer Workerの
- * Lambdaタイムアウト(60秒)のうち、Bedrockでの構造化解析・DynamoDB書き込み分の
- * 余裕を残すため40秒とする(BedrockVisionAdapterのOVERALL_BUDGET_MSと同じ考え方)。
- */
 export const TRANSCRIBE_WAIT_BUDGET_MS = 40_000;
 
-/**
- * Amazon Transcribeを利用した音声文字起こし実装。
- * StartTranscriptionJob は非同期ジョブAPIのため、完了するまでポーリングする。
- * 出力は既定のAWS管理バケットに書き込まれ、GetTranscriptionJobのレスポンスに
- * 一時的な署名付きURL(TranscriptFileUri)が含まれるため、そこから直接fetchする
- * (自前でS3出力バケット・バケットポリシーを用意する必要がない)。
- */
 export class TranscribeTranscriptionService implements TranscriptionService {
   async transcribe(input: { s3Uri: string; mediaFormat: MediaFormat; jobName: string }): Promise<string> {
     const jobLog = log.child({ jobName: input.jobName });
@@ -90,7 +77,6 @@ export class TranscribeTranscriptionService implements TranscriptionService {
   }
 }
 
-/** テスト用。実際のTranscribeを呼ばず、固定のテキストを返す。 */
 export class MockTranscriptionService implements TranscriptionService {
   constructor(private readonly fixedText: string = "鶏もも肉300グラムと卵6個を追加") {}
 

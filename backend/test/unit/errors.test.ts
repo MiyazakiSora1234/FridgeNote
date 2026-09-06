@@ -13,8 +13,6 @@ describe("validationErrorFromZod", () => {
     expect(err.status).toBe(400);
     expect(err.code).toBe("VALIDATION_ERROR");
     expect(err.message).toContain("quantity");
-    // Zodのデフォルトエラーメッセージは issues 配列のJSON文字列化なので、
-    // それがそのまま漏れていないことを確認する。
     expect(err.message).not.toContain('"code"');
     expect(err.message).not.toContain("[");
   });

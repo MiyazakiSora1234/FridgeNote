@@ -18,7 +18,6 @@ resource "aws_s3_bucket_ownership_controls" "images" {
   }
 }
 
-# アップロード画像はAI解析後は不要になるため、一定期間で自動削除しストレージコストを抑制する。
 resource "aws_s3_bucket_lifecycle_configuration" "images" {
   bucket = aws_s3_bucket.images.id
 
@@ -37,9 +36,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "images" {
   }
 }
 
-# Expo Webでの開発・検証時にPresigned URLへの直接PUTがブラウザから行えるようCORSを許可する。
-# ネイティブ(iOS/Android)のfetchはブラウザCORSの制約を受けないため本設定は必須ではないが、
-# Web版でも同じコードパスを使えるようにしておく。
 resource "aws_s3_bucket_cors_configuration" "images" {
   bucket = aws_s3_bucket.images.id
 
@@ -51,7 +47,6 @@ resource "aws_s3_bucket_cors_configuration" "images" {
   }
 }
 
-# S3イベント通知は直接SQSへ送る(ファンアウト先が単一のためSNSは介さない)。
 resource "aws_s3_bucket_notification" "images_to_sqs" {
   bucket = aws_s3_bucket.images.id
 

@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { DateOnlyStringSchema } from "../lib/dateSchema.js";
 
-/**
- * Bedrockへ渡すJSON Schema(Tool useのinput schemaとしても、プロンプト内提示用としても使う)。
- * confidenceは0〜1に限定し、自由形式の文章生成を許さない。
- */
 export const FOOD_ANALYSIS_JSON_SCHEMA = {
   type: "object",
   properties: {
@@ -46,11 +42,6 @@ export const DISH_ANALYSIS_JSON_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-/**
- * レシートOCRテキスト・音声認識テキストのどちらも「食材名+数量+単位」の配列に
- * 構造化してもらう点で同じ形。レシートの場合は食品以外の商品(洗剤等)を
- * 除外するよう、プロンプト側で明示する(このJSON Schema自体はitemsの形だけを規定する)。
- */
 const PARSED_ITEMS_JSON_SCHEMA = {
   type: "object",
   properties: {
@@ -88,7 +79,6 @@ export const RawParsedItemsSchema = z.object({
 });
 export type RawParsedItems = z.infer<typeof RawParsedItemsSchema>;
 
-/** Bedrockの生レスポンス(正規化前)をバックエンドで検証するためのZodスキーマ */
 export const RawFoodAnalysisSchema = z.object({
   name: z.string().min(1).max(100),
   category: z.enum([
@@ -119,5 +109,4 @@ export const RawDishAnalysisSchema = z.object({
 });
 export type RawDishAnalysis = z.infer<typeof RawDishAnalysisSchema>;
 
-/** confidenceがこの値未満の場合、UIに「認識結果を確認してください」を出す閾値 */
 export const LOW_CONFIDENCE_THRESHOLD = 0.6;

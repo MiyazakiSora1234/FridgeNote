@@ -2,7 +2,6 @@ import { RECEIPT_ANALYSIS_JSON_SCHEMA, type RawParsedItems } from "../../schemas
 import { invokeBedrockTool } from "./bedrockToolInvoker.js";
 import { parseRawParsedItemsOrThrow } from "./parseRawParsedItems.js";
 
-/** OCRテキストから購入した食材候補を抽出するAIサービスの境界。 */
 export interface ReceiptAnalysisService {
   analyzeReceiptText(ocrText: string): Promise<RawParsedItems>;
 }
@@ -27,7 +26,6 @@ export class BedrockReceiptAnalysisService implements ReceiptAnalysisService {
   }
 }
 
-/** テスト用。実際のBedrockを呼ばず、固定の解析結果を返す。 */
 export class MockReceiptAnalysisService implements ReceiptAnalysisService {
   constructor(
     private readonly fixedResult: RawParsedItems = {

@@ -1,8 +1,3 @@
-/**
- * DynamoDBDocumentClientの最小限のインメモリ代替。
- * 本プロジェクトが実際に発行するコマンド形状(Put/Get/Update/Delete/Query)のみを
- * サポートする、統合テスト専用の簡易実装であり、DynamoDBの完全な互換実装ではない。
- */
 type Item = Record<string, unknown>;
 
 class ConditionalCheckFailedException extends Error {
@@ -20,11 +15,6 @@ function resolveAttrName(name: string, names?: Record<string, string>): string {
 export function createFakeDdb() {
   const store = new Map<string, Item>();
 
-  /**
-   * 実際のConditionExpressionは "A AND B" のような複合条件になりうる
-   * (例: markProcessingの "#status <> :completed AND attribute_not_exists(terminallyFailed)")。
-   * 各節を独立に評価してすべて真の場合のみ真とする(このテスト用フェイクはOR等は未対応)。
-   */
   function evalCondition(expr: string, existing: Item | undefined, values: Record<string, unknown>): boolean {
     return expr.split(/\s+AND\s+/).every((clause) => evalSingleCondition(clause.trim(), existing, values));
   }
@@ -100,9 +90,6 @@ export function createFakeDdb() {
           }
           const updated: Item = { ...existing };
           const expr = String(input.UpdateExpression);
-
-          // UpdateExpressionは "SET a = :x, b = :y ADD c :z" のようにSET節・ADD節が
-          // 混在しうる(fridgeService.updateFridgeItemのdecrementBy参照)。それぞれ抽出して処理する。
           const setMatch = /SET\s+(.+?)(?=\s+ADD\s|\s+REMOVE\s|\s+DELETE\s|$)/.exec(expr);
           if (setMatch?.[1]) {
             const assignments = setMatch[1].split(",").map((s) => s.trim());

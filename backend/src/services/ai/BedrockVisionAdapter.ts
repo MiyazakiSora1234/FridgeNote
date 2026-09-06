@@ -10,8 +10,6 @@ import { AiResponseInvalidError } from "./errors.js";
 import { invokeBedrockTool } from "./bedrockToolInvoker.js";
 import type { VisionAIService } from "./VisionAnalysisAdapter.js";
 
-// 既存コードやテストからのimportを壊さないよう、リトライ/タイムアウト系の定数と
-// isRetryableError はここから再エクスポートする(実体は bedrockToolInvoker.ts)。
 export {
   MAX_RETRIES,
   INVOKE_TIMEOUT_MS,

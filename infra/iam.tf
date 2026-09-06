@@ -8,7 +8,6 @@ data "aws_iam_policy_document" "lambda_assume_role" {
   }
 }
 
-# --- API Lambda (Hono) ---
 resource "aws_iam_role" "api_lambda" {
   name               = "${var.project_name}-${var.environment}-api-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
@@ -35,8 +34,6 @@ data "aws_iam_policy_document" "api_lambda_policy" {
     ]
   }
   statement {
-    # Presigned URL署名専用。実際のオブジェクトキーはLambda内でuserIdを埋め込んで
-    # 生成するため、ポリシー自体はバケット全体へのPutObjectで最小権限として十分。
     sid       = "PresignUpload"
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.images.arn}/*"]
@@ -48,7 +45,6 @@ resource "aws_iam_role_policy" "api_lambda" {
   policy = data.aws_iam_policy_document.api_lambda_policy.json
 }
 
-# --- Analyzer Worker Lambda ---
 resource "aws_iam_role" "worker_lambda" {
   name               = "${var.project_name}-${var.environment}-worker-lambda"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
@@ -86,15 +82,11 @@ data "aws_iam_policy_document" "worker_lambda_policy" {
     ]
   }
   statement {
-    # レシートOCR用。DetectDocumentTextは同期APIでリソースレベル権限に非対応のため"*"必須。
     sid       = "ExtractReceiptText"
     actions   = ["textract:DetectDocumentText"]
     resources = ["*"]
   }
   statement {
-    # 音声入力の文字起こし用。Start/GetいずれもTranscribeはリソースレベル権限に非対応で"*"必須。
-    # 出力先はAWS管理のデフォルトバケット(TranscriptFileUriをHTTP経由で取得)を使うため、
-    # 追加のS3バケット権限は不要。
     sid       = "TranscribeAudio"
     actions   = ["transcribe:StartTranscriptionJob", "transcribe:GetTranscriptionJob"]
     resources = ["*"]

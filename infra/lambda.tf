@@ -1,7 +1,3 @@
-# デプロイ前提: `npm run build && npm run package:api && npm run package:worker` を
-# backend/ ディレクトリで実行し、dist/api.js, dist/analyzerWorker.js を生成しておくこと
-# (GitHub Actionsのデプロイワークフローで自動化している)。
-
 data "archive_file" "api_lambda" {
   type        = "zip"
   source_file = "${path.module}/../backend/dist/api.js"
@@ -35,9 +31,6 @@ resource "aws_lambda_function" "api" {
   memory_size = 256
   timeout     = 10
 
-  # LambdaはVPCに配置しない: DynamoDB/S3/Cognitoへのアクセスに
-  # VPCもNAT Gatewayも不要であり、VPC化はコスト(NAT Gateway 月$30超)の
-  # 観点から本プロジェクトの予算(月1,000円以下)と両立しないため。
   environment {
     variables = {
       TABLE_NAME         = aws_dynamodb_table.main.name
@@ -57,13 +50,10 @@ resource "aws_lambda_function" "worker" {
   filename         = data.archive_file.worker_lambda.output_path
   source_code_hash = data.archive_file.worker_lambda.output_base64sha256
 
-  memory_size = 512 # Bedrockへ送る画像のBase64変換等のメモリを確保
-  timeout     = 60  # SQS可視性タイムアウト(90秒)より短く設定
+  memory_size = 512
+  timeout     = 60
 
   environment {
-    # ai_confidence_thresholdが未指定(null)の場合はAI_CONFIDENCE_THRESHOLD自体を環境変数に
-    # 含めない -> backend/src/lib/config.tsのコード側デフォルト(LOW_CONFIDENCE_THRESHOLD)が
-    # そのまま使われる(variables.tfのai_confidence_threshold説明を参照)。
     variables = merge(
       {
         TABLE_NAME         = aws_dynamodb_table.main.name

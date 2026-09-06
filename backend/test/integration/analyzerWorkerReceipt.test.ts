@@ -11,8 +11,6 @@ vi.mock("../../src/lib/dynamo.js", () => ({
     typeof err === "object" && err !== null && (err as { name?: unknown }).name === "ConditionalCheckFailedException",
 }));
 
-// 実際のS3・Textractは呼ばず、Mock Adapterに差し替える
-// (docs/architecture.md「AI ProcessはService/Adapterとして分離する」に対応)。
 vi.mock("../../src/services/s3.js", () => ({
   getObjectAsBase64: vi.fn().mockResolvedValue({ base64: "ZmFrZQ==", contentType: "image/jpeg" }),
 }));
@@ -22,10 +20,6 @@ vi.mock("../../src/services/ai/OcrService.js", () => ({
   TextractOcrService: vi.fn().mockImplementation(() => ({ extractText: mockExtractText })),
 }));
 
-// Bedrock呼び出し自体(invokeBedrockTool)だけをモックし、BedrockReceiptAnalysisServiceの
-// 実装(Zodによるレスポンス検証を含む)は本物を使う。こうすることで「Bedrockが不正な
-// JSONを返したときに本当にSchema Validationで弾かれるか」まで検証できる
-// (ReceiptAnalysisService自体を丸ごとモックすると、その検証ロジックを素通りしてしまう)。
 let mockToolOutput: unknown = {
   items: [
     { name: "鶏もも肉", quantity: 1, unit: "pack", confidence: 0.96 },
@@ -104,9 +98,7 @@ describe("analyzerWorker: receipt analysis", () => {
     expect(stored?.result.kind).toBe("receipt");
     expect(stored?.result.items).toHaveLength(3);
     expect(stored?.result.items[0]).toMatchObject({ name: "鶏もも肉", quantity: 1, unit: "pack" });
-    // 食材マスターへ正規化されていること(ingredientIdが割り当てられている)
     expect(stored?.result.items[0].ingredientId).toBeTruthy();
-    // confidence 0.3 の玉ねぎは閾値(既定0.6)未満と判定されていること
     expect(stored?.result.items[2]).toMatchObject({ name: "玉ねぎ", belowConfidenceThreshold: true });
     expect(stored?.result.items[0]).toMatchObject({ belowConfidenceThreshold: false });
   });
@@ -123,7 +115,6 @@ describe("analyzerWorker: receipt analysis", () => {
   });
 
   it("marks the analysis as failed (without sending to DLQ) when Bedrock's response fails schema validation", async () => {
-    // required fields (quantity/unit/confidence) が欠けた、実在しないはずのBedrock応答を模擬する
     mockToolOutput = { items: [{ name: "鶏もも肉" }] };
 
     const userId = "user-1";
@@ -132,7 +123,6 @@ describe("analyzerWorker: receipt analysis", () => {
 
     const response = await handler({ Records: [s3EventSqsRecord("fridgenote-images", imageKey)] });
 
-    // スキーマ不正は再試行しても直らないため、DLQ行きにはせずbatchItemFailuresへは入れない
     expect(response.batchItemFailures).toEqual([]);
     const stored = fakeDdb.store.get(`USER#${userId}#ANALYSIS#${analysisId}`);
     expect(stored?.status).toBe("failed");
@@ -140,9 +130,6 @@ describe("analyzerWorker: receipt analysis", () => {
   });
 
   it("marks the analysis as failed and does NOT redeliver via SQS when Bedrock hits a fatal error (e.g. daily token quota exceeded)", async () => {
-    // AiFatalError(quota超過・権限エラー等)は再試行しても絶対に成功しないため、
-    // 通常のprocessing_errorとは異なり例外を再スローしない = SQS再配信させない
-    // (再配信すると、既に枯渇しているクォータをさらに消費してしまうため)。
     mockInvokeBedrockTool.mockRejectedValueOnce(
       new AiFatalError("Bedrock invocation failed fatally (bedrock_quota_exceeded)", "bedrock_quota_exceeded"),
     );
@@ -155,7 +142,7 @@ describe("analyzerWorker: receipt analysis", () => {
       Records: [s3EventSqsRecord("fridgenote-images", imageKey, "msg-fatal")],
     });
 
-    expect(response.batchItemFailures).toEqual([]); // SQS再配信させない
+    expect(response.batchItemFailures).toEqual([]);
     const stored = fakeDdb.store.get(`USER#${userId}#ANALYSIS#${analysisId}`) as any;
     expect(stored?.status).toBe("failed");
     expect(stored?.errorReason).toBe("bedrock_quota_exceeded");
@@ -163,10 +150,6 @@ describe("analyzerWorker: receipt analysis", () => {
   });
 
   it("does not re-invoke Bedrock even if S3 redelivers the same event after a terminal (fatal) failure", async () => {
-    // 通常はAiFatalErrorが例外を再スローしないためSQS自体は再配信してこないが、
-    // S3がまれに同一のObjectCreatedイベントを重複配信するケース(仕様上あり得る)を模擬する:
-    // 全く別のSQSメッセージとして同じimageKeyのイベントがもう一度届いても、
-    // terminallyFailedなジョブは再処理されないことを確認する。
     mockInvokeBedrockTool.mockRejectedValueOnce(
       new AiFatalError("Bedrock invocation failed fatally (bedrock_quota_exceeded)", "bedrock_quota_exceeded"),
     );

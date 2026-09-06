@@ -1,13 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-/**
- * ThrottlingException(日次トークンクォータ超過含む)・AccessDeniedException等の
- * エラー分類を、実際にinvokeBedrockTool()を通して検証する。
- * bedrockRetry.test.ts は isRetryableError() 単体のホワイトボックステストだが、
- * こちらは「実際にBedrockクライアントがそのエラーを返したとき、何回呼ばれ、
- * 最終的にどんな例外(AiFatalError vs AiInvocationError)が投げられるか」という
- * 呼び出し元(analyzerWorker)から見える振る舞いを検証する。
- */
 const mockSend = vi.fn();
 vi.mock("@aws-sdk/client-bedrock-runtime", () => ({
   BedrockRuntimeClient: vi.fn().mockImplementation(() => ({ send: mockSend })),
@@ -73,13 +65,13 @@ describe("invokeBedrockTool: fatal (non-retryable) error classification", () => 
     );
 
     await expect(invokeBedrockTool(baseParams())).rejects.toMatchObject({ reason: "bedrock_quota_exceeded" });
-    expect(mockSend).toHaveBeenCalledTimes(1); // 秒間Throttlingとは異なりリトライしても無意味なため1回で打ち切る
+    expect(mockSend).toHaveBeenCalledTimes(1);
   });
 
   it("still retries a plain per-second ThrottlingException up to MAX_RETRIES times, then raises a retryable AiInvocationError", async () => {
     mockSend.mockRejectedValue(awsError("ThrottlingException", "Rate exceeded"));
 
     await expect(invokeBedrockTool(baseParams())).rejects.toBeInstanceOf(AiInvocationError);
-    expect(mockSend).toHaveBeenCalledTimes(3); // MAX_RETRIES
+    expect(mockSend).toHaveBeenCalledTimes(3);
   }, 10_000);
 });

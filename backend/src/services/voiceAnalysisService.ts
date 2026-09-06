@@ -7,13 +7,6 @@ import type { AnalysisStatus, ParsedIngredientItem, VoiceAnalysis } from "../typ
 
 const ANALYSIS_TTL_DAYS = 90;
 
-/**
- * 音声入力の解析ジョブを管理するservice。
- * 画像(ImageAnalysis/analysisService.ts)とはエンティティが別だが、
- * ステータス遷移・冪等性・ユーザーフィードバック記録の考え方は完全に共通のため、
- * analysisService.tsと同じ構造で実装している(将来共通化する場合は
- * ジェネリックな AnalysisJobRepository<T> に抽出する余地がある)。
- */
 function voicePrimaryKey(userId: string, analysisId: string) {
   return { PK: Keys.user(userId), SK: Keys.voiceAnalysis(analysisId) };
 }
@@ -64,11 +57,6 @@ export async function getVoiceAnalysis(userId: string, analysisId: string): Prom
   return res.Item as VoiceAnalysis;
 }
 
-/**
- * analysisService.markProcessing と同じ考え方(status=completedの場合のみスキップ)。
- * terminallyFailed(AiFatalErrorによる恒久的失敗)の場合も同様にスキップする
- * (analysisService.markProcessingのコメント参照)。
- */
 export async function markVoiceProcessing(userId: string, analysisId: string): Promise<boolean> {
   try {
     await ddb.send(
@@ -114,7 +102,6 @@ export async function completeVoiceAnalysis(
   );
 }
 
-/** @param options.terminal analysisService.failAnalysisと同じ意味(AiFatalErrorによる恒久的失敗)。 */
 export async function failVoiceAnalysis(
   userId: string,
   analysisId: string,
@@ -150,7 +137,6 @@ export async function recordVoiceUserFeedback(userId: string, analysisId: string
   );
 }
 
-/** S3オブジェクトキーから userId を抽出する (`users/{sub}/audio/{uuid}.m4a`)。 */
 export function userIdFromAudioKey(audioKey: string): string | null {
   const match = /^users\/([^/]+)\/audio\//.exec(audioKey);
   return match ? (match[1] ?? null) : null;

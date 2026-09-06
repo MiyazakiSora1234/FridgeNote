@@ -1,5 +1,3 @@
-# シングルテーブル設計。5ユーザー規模・低頻度アクセスのため
-# オンデマンド課金(PAY_PER_REQUEST)を採用し、アイドル時のキャパシティコストを避ける。
 resource "aws_dynamodb_table" "main" {
   name         = "${var.project_name}-${var.environment}"
   billing_mode = "PAY_PER_REQUEST"
@@ -31,7 +29,6 @@ resource "aws_dynamodb_table" "main" {
     type = "S"
   }
 
-  # 賞味期限が近い順にFridgeItemを取得するためのインデックス
   global_secondary_index {
     name            = "GSI1"
     hash_key        = "GSI1PK"
@@ -39,7 +36,6 @@ resource "aws_dynamodb_table" "main" {
     projection_type = "ALL"
   }
 
-  # 食材マスターの正規化名からingredientIdを引く
   global_secondary_index {
     name            = "GSI3"
     hash_key        = "GSI3PK"
@@ -53,7 +49,7 @@ resource "aws_dynamodb_table" "main" {
   }
 
   point_in_time_recovery {
-    enabled = false # 5ユーザーのMVPではコスト優先で無効(必要になれば有効化)
+    enabled = false
   }
 
   tags = {

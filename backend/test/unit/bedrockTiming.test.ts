@@ -7,12 +7,6 @@ import {
 } from "../../src/services/ai/BedrockVisionAdapter.js";
 
 describe("Bedrock retry timing budget (guard rail)", () => {
-  // このテストの目的: 誰かが将来 INVOKE_TIMEOUT_MS や MAX_RETRIES を
-  // 変更したときに、Analyzer WorkerのLambdaタイムアウトを超えてしまう
-  // 組み合わせへ静かに戻ってしまうのを機械的に検知する
-  // (実際に過去そうなって、Lambdaが強制終了しfailAnalysis()すら
-  // 呼ばれない事故につながった)。
-
   it("keeps the worst-case Bedrock retry time within OVERALL_BUDGET_MS", () => {
     const worstCase = INVOKE_TIMEOUT_MS * MAX_RETRIES;
     expect(worstCase).toBeLessThanOrEqual(OVERALL_BUDGET_MS);

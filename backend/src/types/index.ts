@@ -41,18 +41,12 @@ export interface DishAnalysisResult {
   ingredients: DishAnalysisIngredient[];
 }
 
-/**
- * レシートOCR/音声認識、どちらも最終的に「食材名+数量+単位」のリストに正規化される。
- * 同じ形にしておくことで、確認画面(チェックリスト+一括登録)のUIとバックエンドの
- * 一括登録エンドポイントをレシート/音声の両方で共通利用できる。
- */
 export interface ParsedIngredientItem {
   name: string;
   ingredientId: string;
   quantity: number;
   unit: string;
   confidence: number;
-  /** AI_CONFIDENCE_THRESHOLD(lib/config.ts)を下回るかどうか。バックエンドで判定してから返す。 */
   belowConfidenceThreshold: boolean;
 }
 
@@ -72,7 +66,6 @@ export interface ImageAnalysis {
   status: AnalysisStatus;
   result: AnalysisResult | null;
   errorReason?: string;
-  /** trueの場合、リトライしても絶対に成功しないと判定済みの失敗(AiFatalError)。markProcessingが再処理をブロックする。 */
   terminallyFailed?: boolean;
   userFeedback?: unknown;
   createdAt: string;
@@ -80,11 +73,6 @@ export interface ImageAnalysis {
   ttl?: number;
 }
 
-/**
- * 音声入力は画像ではないため ImageAnalysis とは別エンティティにする
- * (既存のImageAnalysisの形・テストに影響を与えないため)。
- * ステータス遷移・冪等性・ユーザーフィードバック記録の考え方はImageAnalysisと共通。
- */
 export interface VoiceAnalysis {
   entityType: "VoiceAnalysis";
   userId: string;
@@ -108,11 +96,6 @@ export interface RecipeAnalysisIngredient {
   consumed: boolean;
   consumedQuantity?: number;
   unit?: string;
-  /**
-   * 消費確定時点でのFridgeItemの残量スナップショット。
-   * POST /v1/fridge/consume の冪等リプレイ時に、初回と同じレスポンス
-   * ({ consumed: [{ ingredientId, newQuantity }] }) を再構築するために保持する。
-   */
   newQuantityAfterConsume?: number;
 }
 

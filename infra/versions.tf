@@ -16,10 +16,6 @@ terraform {
     }
   }
 
-  # GitHub Actions(deploy.yml)とローカルの両方からapplyできるよう、
-  # stateはS3(+DynamoDBロック)で共有する。バケット/テーブルは
-  # このリポジトリの外で一度だけ手動ブートストラップ済み
-  # (fridgenote-tfstate-<account_id> / fridgenote-tfstate-lock)。
   backend "s3" {
     bucket         = "fridgenote-tfstate-125192672369"
     key            = "fridgenote/terraform.tfstate"

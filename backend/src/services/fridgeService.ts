@@ -17,9 +17,6 @@ const DAYS_SOON_THRESHOLD = 3;
 export function computeExpiryStatus(expiresAt: string | null, now = new Date()): ExpiryStatus {
   if (!expiresAt) return "none";
   const target = new Date(`${expiresAt}T00:00:00`);
-  // API入力はDateOnlyStringSchemaで実在する日付のみ通す設計だが、既存データや
-  // 将来の変更で不正な文字列が紛れ込んだ場合にNaN比較で静かに"ok"を返してしまう
-  // (期限切れなのに気づけない)事故を避けるため、ここでも防御的にガードする。
   if (Number.isNaN(target.getTime())) return "none";
   const diffMs = target.getTime() - now.getTime();
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
@@ -94,10 +91,6 @@ export async function createFridgeItem(
   return item;
 }
 
-/**
- * レシート/音声解析結果の「一括登録」用。createFridgeItemを並列実行するだけの薄いラッパーで、
- * 食材正規化・キー組み立て等のロジックを重複させない。入力順を保って返す。
- */
 export async function createFridgeItemsBulk(
   userId: string,
   inputs: Array<{
@@ -126,10 +119,6 @@ export async function updateFridgeItem(
     values[":quantity"] = patch.quantity;
   }
   if (patch.decrementBy !== undefined) {
-    // 「現在値を読んでからquantityとして上書き」ではなく、DynamoDBのADD式で
-    // 原子的に減算する。これにより、手動での在庫減算(ConsumeManualScreen)が
-    // 複数端末・複数タブから同時に呼ばれても減算が失われない(lost updateを起こさない)。
-    // ConditionExpressionで在庫不足(結果が負になる)も同時に弾く。
     addClause = " ADD quantity :negDelta";
     values[":negDelta"] = -patch.decrementBy;
     values[":delta"] = patch.decrementBy;
@@ -159,9 +148,6 @@ export async function updateFridgeItem(
     return res.Attributes as FridgeItem;
   } catch (err) {
     if (isConditionalCheckFailed(err)) {
-      // decrementBy指定時は「アイテムが存在しない」か「在庫不足で減算できない」の
-      // いずれか(同時実行で在庫が変わった可能性)。呼び出し元が再取得して
-      // やり直せるよう409で区別する。
       if (patch.decrementBy !== undefined) {
         throw ConflictError("insufficient quantity to decrement, or item not found");
       }
@@ -203,13 +189,6 @@ function recipeResultFrom(recipe: RecipeAnalysis): ConsumeResult {
   return result;
 }
 
-/**
- * 冪等性の要(POST /v1/fridge/consume は二重タップやクライアント側リトライで
- * 複数回呼ばれうる)。sourceAnalysisIdごとに1回しか在庫を減算させないよう、
- * 処理開始前にRecipeAnalysisレコードを条件付きで「確保」する。
- * 既に確保済み(=既に処理済みか処理中)であれば false を返し、
- * 呼び出し元は在庫を一切書き換えずに前回の結果を返すべきと判断できる。
- */
 async function claimConsumption(
   userId: string,
   sourceAnalysisId: string,
@@ -239,20 +218,11 @@ async function claimConsumption(
   }
 }
 
-/**
- * 料理写真解析でユーザーが確定した「使用食材」を在庫から減算する。
- * 在庫が0以下になった場合は削除せずquantity=0として保持する(要件通り)。
- * 各食材の在庫更新は別々のDynamoDBアイテムに対する独立した書き込みなので並列実行する。
- *
- * 同じsourceAnalysisIdで2回目以降呼ばれた場合(冪等性): 在庫は一切変更せず、
- * 1回目の処理結果をRecipeAnalysisレコードから再構築して返す。
- */
 export async function consumeIngredients(
   userId: string,
   sourceAnalysisId: string,
   dishName: string,
   consumedIngredients: Array<{ ingredientId: string; quantity: number; unit: string }>,
-  /** AIが候補として提示した食材名(ingredientId -> name)。在庫に無くskipされた食材の表示名に使う。 */
   candidateNames: Map<string, string> = new Map(),
 ): Promise<ConsumeResult> {
   const claimed = await claimConsumption(userId, sourceAnalysisId, dishName);
@@ -264,8 +234,6 @@ export async function consumeIngredients(
       }),
     );
     if (!existing.Item) {
-      // 理論上は起きないはず(直前のclaimConsumptionが条件不成立=既に存在するはずなので)だが、
-      // 削除等で消えていた場合に無限に空レスポンスを返し続けるよりは明示的にエラーにする。
       throw new Error(`consume claim conflict but no existing RecipeAnalysis found for ${sourceAnalysisId}`);
     }
     return recipeResultFrom(existing.Item as RecipeAnalysis);
@@ -273,9 +241,6 @@ export async function consumeIngredients(
 
   const allItems = await queryFridgeItems(userId);
 
-  // 各食材の更新は独立したDynamoDBアイテムへの書き込みなので並列実行するが、
-  // 結果配列は consumedIngredients の入力順を保つため、push ではなく
-  // 各タスクの戻り値を Promise.all 後に順序通り組み立てる。
   type Outcome =
     | { kind: "consumed"; ingredientId: string; newQuantity: number; name: string; quantity: number; unit: string }
     | { kind: "skipped"; ingredientId: string; reason: string };
@@ -313,8 +278,6 @@ export async function consumeIngredients(
       result.skipped.push({ ingredientId: outcome.ingredientId, reason: outcome.reason });
       recipeIngredients.push({
         ingredientId: outcome.ingredientId,
-        // 在庫に無い(=FridgeItemを持たない)ため実際の表示名はここでは分からない。
-        // AIが候補として提示した名前があればそれを使い、無ければingredientIdで代替する。
         name: candidateNames.get(outcome.ingredientId) ?? outcome.ingredientId,
         confidence: 1,
         consumed: false,

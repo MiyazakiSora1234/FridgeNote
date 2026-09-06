@@ -18,17 +18,10 @@ const EXT_BY_CONTENT_TYPE: Record<string, string> = {
   "audio/mpeg": "mp3",
 };
 
-/** S3キーのプレフィックス(users/{sub}/uploads/ or users/{sub}/audio/)を、メディア種別ごとに分ける。 */
 function prefixForContentType(contentType: string): "uploads" | "audio" {
   return contentType.startsWith("audio/") ? "audio" : "uploads";
 }
 
-/**
- * ユーザー専用プレフィックス配下にオブジェクトキーを発行し、PUT用Presigned URLを署名する。
- * userIdはAPI側でJWTのsubから取得した値のみを使う(クライアント指定を許さない)。
- * 画像(食材/料理/レシート)・音声(音声入力)のどちらも同じ仕組みで発行する
- * (メディア種別ごとに別のAPI/Lambdaを用意しない)。
- */
 export async function createUploadPresignedUrl(
   userId: string,
   contentType: string,
@@ -59,7 +52,6 @@ export async function getObjectAsBase64(
   };
 }
 
-/** Transcribeはバイト列を読み込ませず、S3 URIを直接渡して処理させる。 */
 export function s3UriFor(key: string): string {
   return `s3://${BUCKET_NAME}/${key}`;
 }
@@ -70,7 +62,6 @@ const TRANSCRIBE_MEDIA_FORMAT_BY_EXT: Record<string, "mp4" | "wav" | "mp3"> = {
   mp3: "mp3",
 };
 
-/** S3キーの拡張子からTranscribeのMediaFormatを推定する。 */
 export function transcribeMediaFormatFor(key: string): "mp4" | "wav" | "mp3" {
   const ext = key.split(".").pop()?.toLowerCase() ?? "";
   return TRANSCRIBE_MEDIA_FORMAT_BY_EXT[ext] ?? "mp4";

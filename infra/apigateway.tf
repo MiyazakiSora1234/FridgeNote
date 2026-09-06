@@ -1,5 +1,3 @@
-# HTTP API (REST APIより安価・シンプル)。カスタムドメインは設置せずデフォルトエンドポイントを使う
-# (Route53ホストゾーンの固定費や証明書運用コストを避けるため。5ユーザー規模では不要)。
 resource "aws_apigatewayv2_api" "main" {
   name          = "${var.project_name}-${var.environment}"
   protocol_type = "HTTP"
@@ -30,14 +28,12 @@ resource "aws_apigatewayv2_integration" "api_lambda" {
   payload_format_version = "2.0"
 }
 
-# /v1/health は認証不要のヘルスチェック
 resource "aws_apigatewayv2_route" "health" {
   api_id    = aws_apigatewayv2_api.main.id
   route_key = "GET /v1/health"
   target    = "integrations/${aws_apigatewayv2_integration.api_lambda.id}"
 }
 
-# それ以外の /v1/* はすべてCognito JWT認証必須
 resource "aws_apigatewayv2_route" "proxy" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "ANY /v1/{proxy+}"

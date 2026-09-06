@@ -11,9 +11,6 @@ analysesRoute.post("/", async (c) => {
   if (!body.success) throw validationErrorFromZod(body.error);
 
   const userId = c.get("userId");
-  // imageKeyが自分の名前空間 (users/{userId}/uploads/...) 以外を指していないか検証。
-  // presigned URL発行時にサーバー側で決めたパスなので通常は一致するが、
-  // クライアントが任意のimageKeyを送ってきても他人の画像を解析させられないようにする防御。
   if (!body.data.imageKey.startsWith(`users/${userId}/uploads/`)) {
     throw ForbiddenError("imageKey does not belong to the authenticated user");
   }

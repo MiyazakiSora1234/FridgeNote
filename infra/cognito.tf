@@ -24,8 +24,6 @@ resource "aws_cognito_user_pool" "main" {
   }
 }
 
-# モバイル(パブリッククライアント)用。クライアントシークレットは発行しない
-# (React Native側で安全に保持できないため)。
 resource "aws_cognito_user_pool_client" "mobile" {
   name         = "${var.project_name}-${var.environment}-mobile"
   user_pool_id = aws_cognito_user_pool.main.id
@@ -37,9 +35,9 @@ resource "aws_cognito_user_pool_client" "mobile" {
     "ALLOW_REFRESH_TOKEN_AUTH",
   ]
 
-  access_token_validity  = 60 # 分
-  id_token_validity      = 60 # 分
-  refresh_token_validity = 30 # 日
+  access_token_validity  = 60
+  id_token_validity      = 60
+  refresh_token_validity = 30
 
   token_validity_units {
     access_token  = "minutes"

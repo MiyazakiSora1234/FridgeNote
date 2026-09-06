@@ -21,8 +21,6 @@ vi.mock("../../src/services/ai/TranscriptionService.js", () => ({
   TranscribeTranscriptionService: vi.fn().mockImplementation(() => ({ transcribe: mockTranscribe })),
 }));
 
-// レシートのテストと同様、Bedrock呼び出し自体だけをモックし、
-// BedrockVoiceAnalysisServiceの実装(Zod検証を含む)は本物を使う。
 let mockToolOutput: unknown = {
   items: [
     { name: "鶏もも肉", quantity: 300, unit: "g", confidence: 0.95 },
@@ -109,14 +107,14 @@ describe("analyzerWorker: voice analysis", () => {
     mockTranscribe.mockClear();
     mockInvokeBedrockTool.mockClear();
 
-    await handler(event); // 重複配信を模擬
+    await handler(event);
 
     expect(mockTranscribe).not.toHaveBeenCalled();
     expect(mockInvokeBedrockTool).not.toHaveBeenCalled();
   });
 
   it("marks the voice analysis as failed when Bedrock's response fails schema validation", async () => {
-    mockToolOutput = { items: [{ name: "鶏もも肉" }] }; // quantity/unit/confidence欠落
+    mockToolOutput = { items: [{ name: "鶏もも肉" }] };
 
     const userId = "user-1";
     const audioKey = `users/${userId}/audio/clip3.m4a`;

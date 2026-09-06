@@ -42,7 +42,6 @@ fridgeRoute.post("/items", async (c) => {
   });
 
   if (body.data.sourceAnalysisId) {
-    // AI認識結果に対してユーザーが最終的に確定した値を記録する(補助的な記録なので失敗は無視する)。
     await recordUserFeedback(userId, body.data.sourceAnalysisId, {
       type: "food_confirmed",
       ingredientName: body.data.ingredientName,
@@ -55,11 +54,6 @@ fridgeRoute.post("/items", async (c) => {
   return c.json(item, 201);
 });
 
-/**
- * レシート/音声の確認画面で「すべて追加」を押したときに呼ばれる一括登録。
- * ユーザーがチェックを外した項目はこの時点で items に含めない(=登録しない)前提で、
- * サーバー側は「渡されたものは全部登録する」だけのシンプルな責務にする。
- */
 fridgeRoute.post("/items/bulk", async (c) => {
   const body = BulkCreateFridgeItemsRequestSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!body.success) throw validationErrorFromZod(body.error);
@@ -113,11 +107,8 @@ fridgeRoute.post("/consume", async (c) => {
   if (!body.success) throw validationErrorFromZod(body.error);
 
   const userId = c.get("userId");
-  // sourceAnalysisIdの所有者チェックを兼ねて取得(他人の解析結果からは消費できない)
   const analysis = await getAnalysis(userId, body.data.sourceAnalysisId);
 
-  // 「使用した食材候補」を確認してから消費する、という機能の意図上、
-  // AIが実際に提案していない食材IDを勝手に消費対象にはできないようにする。
   if (analysis.status !== "completed" || !analysis.result || analysis.result.kind !== "dish") {
     throw ValidationError("sourceAnalysisId must reference a completed dish analysis");
   }
@@ -132,8 +123,6 @@ fridgeRoute.post("/consume", async (c) => {
   }
 
   const dishName = analysis.result.dish;
-  // AIが候補として提示した名前をここで拾っておき、在庫に無くskipされた食材の
-  // 表示名として使う(consumeIngredients単体ではingredientIdしか持たないため)。
   const candidateNames = new Map(analysis.result.ingredients.map((i) => [i.ingredientId, i.name]));
   const result = await consumeIngredients(
     userId,
@@ -143,8 +132,6 @@ fridgeRoute.post("/consume", async (c) => {
     candidateNames,
   );
 
-  // AIが候補として出した食材のうち、ユーザーが実際に「使った」と確定したものを記録する
-  // (補助的な記録なので失敗は無視する)。
   await recordUserFeedback(userId, body.data.sourceAnalysisId, {
     type: "dish_consumed",
     consumedIngredients: body.data.consumedIngredients,

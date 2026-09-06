@@ -1,10 +1,3 @@
-# コスト最優先の監査証跡: 管理イベント(誰が/いつ/どのAPIを呼んだか)のみを記録する
-# 単一リージョンのTrailを1つだけ作成する。AWSは「リージョンごとに1つの証跡までの
-# 管理イベント記録」を無料枠として提供しているため、追加コストなしで最低限の
-# 監査ログを確保できる(参照: AWS CloudTrailの料金ページ)。
-# データイベント(S3オブジェクトごとのGetObject/PutObject、Lambda呼び出し等)は
-# 呼び出し回数に応じて課金されるうえ本プロジェクトの規模(5ユーザー)では
-# 監査上の必要性も薄いため、有効化しない。
 resource "aws_s3_bucket" "cloudtrail_logs" {
   bucket = "${var.project_name}-${var.environment}-cloudtrail-${data.aws_caller_identity.current.account_id}"
 }
@@ -25,7 +18,6 @@ resource "aws_s3_bucket_ownership_controls" "cloudtrail_logs" {
   }
 }
 
-# ログの無期限蓄積によるストレージコスト増を避けるため、一定期間で自動削除する。
 resource "aws_s3_bucket_lifecycle_configuration" "cloudtrail_logs" {
   bucket = aws_s3_bucket.cloudtrail_logs.id
 
@@ -77,13 +69,12 @@ resource "aws_cloudtrail" "main" {
   name                          = "${var.project_name}-${var.environment}-trail"
   s3_bucket_name                = aws_s3_bucket.cloudtrail_logs.id
   include_global_service_events = true
-  is_multi_region_trail         = false # 単一リージョン運用。管理イベントの無料枠を活かしコストを増やさない。
+  is_multi_region_trail         = false
   enable_log_file_validation    = true
 
   event_selector {
     read_write_type           = "All"
     include_management_events = true
-    # data_resourceブロックを指定しない = データイベントは記録しない(課金対象のため)。
   }
 
   depends_on = [aws_s3_bucket_policy.cloudtrail_logs]

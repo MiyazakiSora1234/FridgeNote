@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-/**
- * logger.ts はモジュール読み込み時に一度だけ LOG_LEVEL を評価するため、
- * レベルごとの挙動を検証するにはテストごとに vi.resetModules() で
- * モジュールキャッシュを破棄してから読み直す必要がある。
- */
 async function freshLogger() {
   vi.resetModules();
   const mod = await import("../../src/lib/logger.js");

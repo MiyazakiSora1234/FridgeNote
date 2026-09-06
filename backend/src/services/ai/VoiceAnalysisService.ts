@@ -2,7 +2,6 @@ import { VOICE_ANALYSIS_JSON_SCHEMA, type RawParsedItems } from "../../schemas/a
 import { invokeBedrockTool } from "./bedrockToolInvoker.js";
 import { parseRawParsedItemsOrThrow } from "./parseRawParsedItems.js";
 
-/** 音声認識テキストから追加したい食材を抽出するAIサービスの境界。 */
 export interface VoiceAnalysisService {
   analyzeTranscript(transcript: string): Promise<RawParsedItems>;
 }
@@ -26,7 +25,6 @@ export class BedrockVoiceAnalysisService implements VoiceAnalysisService {
   }
 }
 
-/** テスト用。実際のBedrockを呼ばず、固定の解析結果を返す。 */
 export class MockVoiceAnalysisService implements VoiceAnalysisService {
   constructor(
     private readonly fixedResult: RawParsedItems = {

@@ -25,7 +25,6 @@ describe("computeExpiryStatus", () => {
   });
 
   it("falls back to 'none' instead of silently claiming 'ok' for an unparseable date", () => {
-    // API入力側はDateOnlyStringSchemaで弾く設計だが、既存データ破損等への防御としてここでも確認する。
     expect(computeExpiryStatus("not-a-date", now)).toBe("none");
   });
 });

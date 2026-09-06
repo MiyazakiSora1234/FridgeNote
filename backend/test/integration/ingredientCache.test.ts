@@ -32,9 +32,9 @@ describe("ingredient master cache", () => {
     await resolveIngredientId("トマト");
     expect(queryCallCount()).toBe(1);
 
-    await resolveIngredientId("とまと"); // 表記ゆれ違いでも同じ正規化名 -> キャッシュ命中のはず
+    await resolveIngredientId("とまと");
     await resolveIngredientId("トマト");
-    expect(queryCallCount()).toBe(1); // 追加のQueryは発生しない
+    expect(queryCallCount()).toBe(1);
   });
 
   it("makes a newly created ingredient visible to subsequent resolves without re-querying", async () => {
@@ -43,7 +43,7 @@ describe("ingredient master cache", () => {
 
     const second = await resolveIngredientId("新食材");
     expect(second.ingredientId).toBe(first.ingredientId);
-    expect(queryCallCount()).toBe(callsAfterCreate); // キャッシュへの即時追加により再クエリなし
+    expect(queryCallCount()).toBe(callsAfterCreate);
   });
 
   it("__resetIngredientCacheForTests forces a fresh query on the next resolve", async () => {
@@ -56,11 +56,6 @@ describe("ingredient master cache", () => {
   });
 
   it("does not create duplicate master entries when two requests race to create the same new ingredient", async () => {
-    // レシート/音声の一括正規化は複数アイテムをPromise.allで並列処理するため、
-    // 同じ未登録食材名が同時に複数回resolveIngredientIdへ渡されることがある。
-    // idを正規化名から決定論的に導出しているため、両方とも同じPKへPutを試み、
-    // 後着はConditionalCheckFailedExceptionを受けて先着の結果を再利用するはず
-    // (以前はULID採番だったため、ここで食材マスターに重複行ができていた)。
     const [first, second] = await Promise.all([
       resolveIngredientId("新食材レース"),
       resolveIngredientId("新食材レース"),

@@ -1,15 +1,13 @@
 resource "aws_sqs_queue" "analysis_dlq" {
   name                      = "${var.project_name}-${var.environment}-analysis-dlq"
-  message_retention_seconds = 60 * 60 * 24 * 14 # 14日
+  message_retention_seconds = 60 * 60 * 24 * 14
 }
 
 resource "aws_sqs_queue" "analysis_queue" {
   name = "${var.project_name}-${var.environment}-analysis-queue"
 
-  # LambdaのタイムアウトMAX(30秒程度を想定)より十分長く設定し、
-  # 処理中に同一メッセージが再配信されないようにする。
   visibility_timeout_seconds = 90
-  message_retention_seconds  = 60 * 60 * 24 * 4 # 4日
+  message_retention_seconds  = 60 * 60 * 24 * 4
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.analysis_dlq.arn
@@ -39,7 +37,6 @@ resource "aws_sqs_queue_policy" "allow_s3" {
   })
 }
 
-# DLQ滞留は「AIの解析が完全に失敗し続けている」という運用上の異常シグナルのため監視する。
 resource "aws_cloudwatch_metric_alarm" "dlq_not_empty" {
   alarm_name          = "${var.project_name}-${var.environment}-analysis-dlq-not-empty"
   namespace           = "AWS/SQS"

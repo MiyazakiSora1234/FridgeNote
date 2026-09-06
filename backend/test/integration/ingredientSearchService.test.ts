@@ -43,12 +43,9 @@ describe("AliasIngredientSearchService", () => {
   });
 
   it("matches across script variants (katakana/hiragana are the same normalized name; romaji is an alias)", async () => {
-    // 「とまと」はカタカナ「トマト」を正規化(カタカナ→ひらがな)した結果と一致するため、
-    // エイリアスを介さずとも名前そのものの完全一致として score:1 になる。
     const viaHiragana = await service.search("とまと", 5);
     expect(viaHiragana[0]).toMatchObject({ ingredientId: "ing_tomato", score: 1 });
 
-    // "tomato" はaliasにしか無いため、alias一致として score:0.9 になる。
     const viaRomaji = await service.search("tomato", 5);
     expect(viaRomaji[0]).toMatchObject({ ingredientId: "ing_tomato", score: 0.9 });
   });
@@ -57,14 +54,13 @@ describe("AliasIngredientSearchService", () => {
     const results = await service.search("鶏もも", 5);
     const top = results[0];
     expect(top?.ingredientId).toBe("ing_chicken_thigh");
-    expect(top?.score).toBeGreaterThan(0.5); // alias一致なので0.9
+    expect(top?.score).toBeGreaterThan(0.5);
   });
 
   it("does not conflate 鶏もも肉 and 鶏むね肉 as the same ingredient (only exact/alias match counts as 'same')", async () => {
     const results = await service.search("鶏もも肉", 5);
     const exact = results.find((r) => r.score === 1);
     expect(exact?.ingredientId).toBe("ing_chicken_thigh");
-    // 鶏むね肉が候補に出てくること自体は許容するが、スコア1(完全一致扱い)にはならない
     const breast = results.find((r) => r.ingredientId === "ing_chicken_breast");
     if (breast) expect(breast.score).toBeLessThan(1);
   });

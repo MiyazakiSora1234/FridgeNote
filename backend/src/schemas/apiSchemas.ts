@@ -27,12 +27,7 @@ export const CreateFridgeItemRequestSchema = z.object({
   sourceAnalysisId: z.string().min(1).max(64).optional(),
 });
 
-/**
- * レシート/音声解析結果の「一括登録」用。単品登録(CreateFridgeItemRequestSchema)を
- * そのまま複数件受け取る形にし、バリデーションルールを重複定義しない。
- */
 export const BulkCreateFridgeItemsRequestSchema = z.object({
-  /** 一括登録の由来。1リクエストはレシート/音声どちらか一方のフローからのみ呼ばれる想定。 */
   source: z.enum(["receipt", "voice"]),
   sourceAnalysisId: z.string().min(1).max(64).optional(),
   items: z.array(CreateFridgeItemRequestSchema.omit({ sourceAnalysisId: true })).min(1).max(50),
@@ -41,12 +36,6 @@ export const BulkCreateFridgeItemsRequestSchema = z.object({
 export const UpdateFridgeItemRequestSchema = z
   .object({
     quantity: z.number().finite().nonnegative().max(100000).optional(),
-    /**
-     * 「現在値を読んでから引いた値をquantityとして上書き」だとクライアント側の計算になり、
-     * 2つのリクエストが同時に来ると片方の減算が失われる(lost update)。
-     * decrementByはサーバー側でDynamoDBのADD式による原子的な減算として処理するための
-     * 専用フィールドで、quantityとは併用しない(手動での在庫減算画面が使う)。
-     */
     decrementBy: z.number().finite().positive().max(100000).optional(),
     unit: z.string().min(1).max(20).optional(),
     expiresAt: DateOnlyStringSchema.nullable().optional(),
