@@ -8,6 +8,7 @@ import { getErrorMessage } from "../lib/getErrorMessage";
 import { ManualFallback } from "./analysisResult/ManualFallback";
 import { FoodConfirmForm } from "./analysisResult/FoodConfirmForm";
 import { DishConfirmForm } from "./analysisResult/DishConfirmForm";
+import { colors, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AnalysisResult">;
 
@@ -57,8 +58,9 @@ export function AnalysisResultScreen({ route, navigation }: Props) {
   if (!analysis || analysis.status === "pending" || analysis.status === "processing") {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.message}>画像を解析しています</Text>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[typography.body, styles.message]}>🔍 画像を解析しています</Text>
+        <Text style={typography.bodyMuted}>少々お待ちください...</Text>
       </View>
     );
   }
@@ -86,6 +88,13 @@ export function AnalysisResultScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24, gap: 12 },
-  message: { fontSize: 16, marginTop: 12 },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    gap: 6,
+    backgroundColor: colors.background,
+  },
+  message: { marginTop: 12, fontWeight: "600" },
 });

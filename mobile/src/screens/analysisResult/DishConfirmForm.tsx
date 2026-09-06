@@ -1,11 +1,15 @@
 import React, { useState } from "react";
-import { Alert, Button, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../navigation/types";
 import type { DishAnalysisIngredient } from "../../types";
 import { api } from "../../api/client";
 import { AppTextInput } from "../../components/AppTextInput";
+import { Button } from "../../components/Button";
+import { Card } from "../../components/Card";
+import { ConfidenceBar } from "../../components/ConfidenceBar";
 import { getErrorMessage } from "../../lib/getErrorMessage";
+import { colors, spacing, typography } from "../../theme";
 import { LowConfidenceNotice } from "./LowConfidenceNotice";
 
 interface Props {
@@ -67,20 +71,23 @@ export function DishConfirmForm({ analysisId, dish, ingredients, navigation }: P
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.formContent}>
-      <Text style={styles.title}>料理: {dish}</Text>
-      <Text style={styles.hint}>
-        以下は画像から推定された「使用食材候補」です。実際に使用したものだけチェックし、
-        数量を確認してから確定してください(在庫は確定するまで変更されません)。
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={typography.heading}>🍽️ {dish}</Text>
+      <Text style={[typography.bodyMuted, styles.hint]}>
+        使ったものだけチェックして、数量を確認してから確定してください。在庫は確定するまで変わりません。
       </Text>
 
       {drafts.map((d, i) => (
-        <View key={d.ingredientId} style={styles.ingredientRow}>
+        <Card key={d.ingredientId} style={[styles.ingredientCard, !d.checked && styles.ingredientCardOff]}>
           <View style={styles.ingredientHeader}>
-            <Switch value={d.checked} onValueChange={(v) => update(i, { checked: v })} />
+            <Switch
+              value={d.checked}
+              onValueChange={(v) => update(i, { checked: v })}
+              trackColor={{ true: colors.primary }}
+            />
             <Text style={styles.ingredientName}>{d.name}</Text>
-            <Text style={styles.confidence}>{Math.round(d.confidence * 100)}%</Text>
           </View>
+          <ConfidenceBar confidence={d.confidence} />
           <LowConfidenceNotice confidence={d.confidence} />
           {d.checked && (
             <View style={styles.ingredientInputs}>
@@ -99,27 +106,22 @@ export function DishConfirmForm({ analysisId, dish, ingredients, navigation }: P
               />
             </View>
           )}
-        </View>
+        </Card>
       ))}
 
-      <Button title={submitting ? "更新中..." : "使用した食材を確定する"} onPress={onConfirm} disabled={submitting} />
+      <Button title={submitting ? "更新中..." : "使用した食材を確定する"} onPress={onConfirm} loading={submitting} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  formContent: { padding: 24, gap: 4 },
-  title: { fontSize: 20, fontWeight: "700", marginBottom: 8 },
-  hint: { color: "#555", marginBottom: 12 },
-  confidence: { color: "#777", fontSize: 12 },
-  ingredientRow: {
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    paddingVertical: 12,
-  },
-  ingredientHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  ingredientName: { fontSize: 16, fontWeight: "600", flex: 1 },
-  ingredientInputs: { flexDirection: "row", gap: 8, marginTop: 8 },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.lg, gap: spacing.md },
+  hint: { marginTop: -spacing.sm, marginBottom: spacing.xs },
+  ingredientCard: { gap: spacing.sm },
+  ingredientCardOff: { opacity: 0.55 },
+  ingredientHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  ingredientName: { fontSize: 16, fontWeight: "700", flex: 1, color: colors.text },
+  ingredientInputs: { flexDirection: "row", gap: spacing.sm },
   inputSmall: { flex: 1 },
 });

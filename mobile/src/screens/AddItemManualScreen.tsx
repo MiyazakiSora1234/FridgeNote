@@ -1,10 +1,13 @@
 import React, { useState } from "react";
-import { Alert, Button, StyleSheet, View } from "react-native";
+import { Alert, ScrollView, StyleSheet } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { api } from "../api/client";
 import { LabeledTextInput } from "../components/LabeledTextInput";
+import { Button } from "../components/Button";
+import { Card } from "../components/Card";
 import { getErrorMessage } from "../lib/getErrorMessage";
+import { colors, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AddItemManual">;
 
@@ -38,22 +41,26 @@ export function AddItemManualScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <LabeledTextInput label="食材名" value={name} onChangeText={setName} placeholder="例: トマト" />
-      <LabeledTextInput label="数量" value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
-      <LabeledTextInput label="単位" value={unit} onChangeText={setUnit} placeholder="例: 個 / g / ml" />
-      <LabeledTextInput
-        label="賞味期限(YYYY-MM-DD、任意)"
-        value={expiresAt}
-        onChangeText={setExpiresAt}
-        placeholder="2026-09-20"
-      />
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Card>
+        <LabeledTextInput label="食材名" value={name} onChangeText={setName} placeholder="例: トマト" />
+        <LabeledTextInput label="数量" value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
+        <LabeledTextInput label="単位" value={unit} onChangeText={setUnit} placeholder="例: 個 / g / ml" />
+        <LabeledTextInput
+          label="賞味期限(任意)"
+          value={expiresAt}
+          onChangeText={setExpiresAt}
+          placeholder="YYYY-MM-DD"
+        />
+      </Card>
 
-      <Button title={submitting ? "登録中..." : "登録する"} onPress={onSubmit} disabled={submitting} />
-    </View>
+      <Button title={submitting ? "登録中..." : "登録する"} onPress={onSubmit} loading={submitting} style={styles.submit} />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24 },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.lg },
+  submit: { marginTop: spacing.lg },
 });

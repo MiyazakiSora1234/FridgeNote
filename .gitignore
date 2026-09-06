@@ -14,8 +14,9 @@ node_modules/
 tfplan*
 infra/build/
 
-# Claude Code local state
-.claude/
+# Claude Code local state(launch.jsonはdevツール設定として保持する)
+.claude/*
+!.claude/launch.json
 
 # Backend build output
 backend/dist/

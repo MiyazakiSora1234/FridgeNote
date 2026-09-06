@@ -1,6 +1,6 @@
 import React from "react";
 import { ActivityIndicator, View } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
+import { DefaultTheme, NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "./types";
 import { useAuth } from "../auth/AuthContext";
@@ -10,28 +10,45 @@ import { FridgeListScreen } from "../screens/FridgeListScreen";
 import { AddItemManualScreen } from "../screens/AddItemManualScreen";
 import { CameraScreen } from "../screens/CameraScreen";
 import { AnalysisResultScreen } from "../screens/AnalysisResultScreen";
+import { colors } from "../theme";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+const navigationTheme = {
+  ...DefaultTheme,
+  colors: { ...DefaultTheme.colors, background: colors.background, primary: colors.primary },
+};
 
 export function RootNavigator() {
   const { isLoading, isSignedIn } = useAuth();
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" />
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator>
+    <NavigationContainer theme={navigationTheme}>
+      <Stack.Navigator
+        screenOptions={{
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.text,
+          headerTitleStyle: { fontWeight: "700" },
+          headerShadowVisible: false,
+        }}
+      >
         {isSignedIn ? (
           <>
-            <Stack.Screen name="FridgeList" component={FridgeListScreen} options={{ title: "冷蔵庫" }} />
+            <Stack.Screen name="FridgeList" component={FridgeListScreen} options={{ headerShown: false }} />
             <Stack.Screen name="AddItemManual" component={AddItemManualScreen} options={{ title: "食材を登録" }} />
-            <Stack.Screen name="Camera" component={CameraScreen} options={{ title: "撮影" }} />
+            <Stack.Screen
+              name="Camera"
+              component={CameraScreen}
+              options={{ headerTransparent: true, headerTitle: "", headerTintColor: "#fff" }}
+            />
             <Stack.Screen
               name="AnalysisResult"
               component={AnalysisResultScreen}

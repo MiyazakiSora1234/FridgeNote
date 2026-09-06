@@ -1,9 +1,12 @@
 import React, { useState } from "react";
-import { Button, StyleSheet, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { confirmSignUp, signUp } from "../auth/cognito";
 import { AppTextInput } from "../components/AppTextInput";
+import { Button } from "../components/Button";
+import { Card } from "../components/Card";
+import { colors, spacing, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SignUp">;
 
@@ -43,50 +46,56 @@ export function SignUpScreen({ navigation }: Props) {
 
   if (step === "confirm") {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>確認コードを入力</Text>
-        <Text style={styles.hint}>{email} に届いた確認コードを入力してください</Text>
-        <AppTextInput
-          style={styles.field}
-          placeholder="確認コード"
-          keyboardType="number-pad"
-          value={code}
-          onChangeText={setCode}
-        />
-        {error && <Text style={styles.error}>{error}</Text>}
-        <Button title={submitting ? "確認中..." : "確認する"} onPress={onConfirm} disabled={submitting} />
-      </View>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <Text style={[typography.heading, styles.centerText]}>確認コードを入力</Text>
+        <Text style={[typography.bodyMuted, styles.centerText, styles.hint]}>
+          {email} に届いた確認コードを入力してください
+        </Text>
+        <Card>
+          <AppTextInput
+            style={styles.field}
+            placeholder="確認コード"
+            keyboardType="number-pad"
+            value={code}
+            onChangeText={setCode}
+          />
+          {error && <Text style={styles.error}>{error}</Text>}
+          <Button title={submitting ? "確認中..." : "確認する"} onPress={onConfirm} loading={submitting} />
+        </Card>
+      </KeyboardAvoidingView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>新規登録</Text>
-      <AppTextInput
-        style={styles.field}
-        placeholder="メールアドレス"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
-      <AppTextInput
-        style={styles.field}
-        placeholder="パスワード(8文字以上)"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-      {error && <Text style={styles.error}>{error}</Text>}
-      <Button title={submitting ? "登録中..." : "登録する"} onPress={onRegister} disabled={submitting} />
-    </View>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <Text style={[typography.title, styles.centerText]}>新規登録</Text>
+      <Card>
+        <AppTextInput
+          style={styles.field}
+          placeholder="メールアドレス"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <AppTextInput
+          style={styles.field}
+          placeholder="パスワード(8文字以上)"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
+        {error && <Text style={styles.error}>{error}</Text>}
+        <Button title={submitting ? "登録中..." : "登録する"} onPress={onRegister} loading={submitting} />
+      </Card>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 24 },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 16, textAlign: "center" },
-  hint: { marginBottom: 16, textAlign: "center", color: "#555" },
-  field: { marginBottom: 12 },
-  error: { color: "#B00020", marginBottom: 12 },
+  container: { flex: 1, justifyContent: "center", padding: spacing.lg, backgroundColor: colors.background, gap: spacing.lg },
+  centerText: { textAlign: "center" },
+  hint: { marginTop: -spacing.md },
+  field: { marginBottom: spacing.md },
+  error: { color: colors.danger, marginBottom: spacing.md, fontSize: 13 },
 });

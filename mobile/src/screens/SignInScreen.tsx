@@ -1,9 +1,12 @@
 import React, { useState } from "react";
-import { Button, StyleSheet, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../auth/AuthContext";
 import { AppTextInput } from "../components/AppTextInput";
+import { Button } from "../components/Button";
+import { Card } from "../components/Card";
+import { colors, spacing, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SignIn">;
 
@@ -27,35 +30,45 @@ export function SignInScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>FridgeNote</Text>
-      <AppTextInput
-        style={styles.field}
-        placeholder="メールアドレス"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
-      <AppTextInput
-        style={styles.field}
-        placeholder="パスワード"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-      {error && <Text style={styles.error}>{error}</Text>}
-      <Button title={submitting ? "サインイン中..." : "サインイン"} onPress={onSubmit} disabled={submitting} />
-      <View style={styles.spacer} />
-      <Button title="新規登録はこちら" onPress={() => navigation.navigate("SignUp")} />
-    </View>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <View style={styles.brand}>
+        <Text style={styles.emoji}>🧊</Text>
+        <Text style={typography.title}>FridgeNote</Text>
+        <Text style={typography.bodyMuted}>写真で冷蔵庫を管理しよう</Text>
+      </View>
+
+      <Card>
+        <AppTextInput
+          style={styles.field}
+          placeholder="メールアドレス"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <AppTextInput
+          style={styles.field}
+          placeholder="パスワード"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
+        {error && <Text style={styles.error}>{error}</Text>}
+        <Button title={submitting ? "サインイン中..." : "サインイン"} onPress={onSubmit} loading={submitting} />
+      </Card>
+
+      <Button title="新規登録はこちら" variant="ghost" onPress={() => navigation.navigate("SignUp")} />
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 24 },
-  title: { fontSize: 28, fontWeight: "700", marginBottom: 24, textAlign: "center" },
-  field: { marginBottom: 12 },
-  error: { color: "#B00020", marginBottom: 12 },
-  spacer: { height: 16 },
+  container: { flex: 1, justifyContent: "center", padding: spacing.lg, backgroundColor: colors.background, gap: spacing.lg },
+  brand: { alignItems: "center", marginBottom: spacing.sm, gap: 2 },
+  emoji: { fontSize: 48, marginBottom: spacing.sm },
+  field: { marginBottom: spacing.md },
+  error: { color: colors.danger, marginBottom: spacing.md, fontSize: 13 },
 });

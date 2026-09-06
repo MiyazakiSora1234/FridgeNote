@@ -1,11 +1,15 @@
 import React, { useState } from "react";
-import { Alert, Button, ScrollView, StyleSheet, Text } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../navigation/types";
 import type { FoodAnalysisResult } from "../../types";
 import { api } from "../../api/client";
 import { LabeledTextInput } from "../../components/LabeledTextInput";
+import { Button } from "../../components/Button";
+import { Card } from "../../components/Card";
+import { ConfidenceBar } from "../../components/ConfidenceBar";
 import { getErrorMessage } from "../../lib/getErrorMessage";
+import { colors, spacing, typography } from "../../theme";
 import { LowConfidenceNotice } from "./LowConfidenceNotice";
 
 interface Props {
@@ -46,31 +50,34 @@ export function FoodConfirmForm({ analysisId, result, navigation }: Props) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.formContent}>
-      <Text style={styles.title}>認識結果を確認してください</Text>
-      <Text style={styles.hint}>AIの認識結果です。内容を確認・修正してから登録してください。</Text>
-      <LowConfidenceNotice confidence={result.confidence} />
-      <Text style={styles.confidence}>確信度: {Math.round(result.confidence * 100)}%</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={typography.heading}>認識結果を確認してください</Text>
+      <Text style={[typography.bodyMuted, styles.hint]}>内容を確認・修正してから登録してください。</Text>
 
-      <LabeledTextInput label="食材名" value={name} onChangeText={setName} />
-      <LabeledTextInput label="数量" value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
-      <LabeledTextInput label="単位" value={unit} onChangeText={setUnit} />
-      <LabeledTextInput
-        label="賞味期限(推定・修正可)"
-        value={expiresAt}
-        onChangeText={setExpiresAt}
-        placeholder="YYYY-MM-DD"
-      />
+      <Card style={styles.card}>
+        <LowConfidenceNotice confidence={result.confidence} />
+        <ConfidenceBar confidence={result.confidence} />
 
-      <Button title={submitting ? "登録中..." : "この内容で登録する"} onPress={onConfirm} disabled={submitting} />
+        <LabeledTextInput label="食材名" value={name} onChangeText={setName} style={styles.gap} />
+        <LabeledTextInput label="数量" value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
+        <LabeledTextInput label="単位" value={unit} onChangeText={setUnit} />
+        <LabeledTextInput
+          label="賞味期限(推定・修正可)"
+          value={expiresAt}
+          onChangeText={setExpiresAt}
+          placeholder="YYYY-MM-DD"
+        />
+      </Card>
+
+      <Button title={submitting ? "登録中..." : "この内容で登録する"} onPress={onConfirm} loading={submitting} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  formContent: { padding: 24, gap: 4 },
-  title: { fontSize: 20, fontWeight: "700", marginBottom: 8 },
-  hint: { color: "#555", marginBottom: 12 },
-  confidence: { color: "#777", fontSize: 12 },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.lg, gap: spacing.lg },
+  hint: { marginTop: -spacing.sm },
+  card: { gap: 2 },
+  gap: { marginTop: spacing.sm },
 });
