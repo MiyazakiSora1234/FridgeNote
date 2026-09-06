@@ -4,6 +4,7 @@ import { AiInvocationError } from "./errors.js";
 
 const log = logger.child({ component: "OcrService" });
 
+// OCRエンジン(Textract)をここで隠蔽し、Worker側はこのインターフェースにだけ依存する。
 export interface OcrService {
   extractText(input: { base64: string; contentType: string }): Promise<string>;
 }

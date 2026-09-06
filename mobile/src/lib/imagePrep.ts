@@ -1,5 +1,6 @@
 import * as ImageManipulator from "expo-image-manipulator";
 
+// S3アップロード容量とBedrock送信量を抑えるための圧縮(コスト要件: 月1,000円以下)。
 const MAX_DIMENSION = 1280;
 const JPEG_QUALITY = 0.7;
 

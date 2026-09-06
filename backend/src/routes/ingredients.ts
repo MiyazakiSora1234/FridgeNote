@@ -8,6 +8,7 @@ export const ingredientsRoute = new Hono<AppEnv>();
 
 const searchService = new AliasIngredientSearchService();
 
+// requireAuthでログイン済みユーザーに限定済みのため、それ以上の認可制限は不要。
 ingredientsRoute.post("/search", async (c) => {
   const body = IngredientSearchRequestSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!body.success) throw validationErrorFromZod(body.error);

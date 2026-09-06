@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { IngredientCandidate } from "../types";
 import { colors, radius, spacing } from "../theme";
 
+// タップで入力値を正式名称に置き換え、表記ゆれによる食材マスターの意図しない増殖を防ぐ。
 export function IngredientSuggestions({
   suggestions,
   onSelect,

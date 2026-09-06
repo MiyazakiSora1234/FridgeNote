@@ -112,6 +112,7 @@ fridgeRoute.post("/consume", async (c) => {
   if (analysis.status !== "completed" || !analysis.result || analysis.result.kind !== "dish") {
     throw ValidationError("sourceAnalysisId must reference a completed dish analysis");
   }
+  // AIが実際に提案していない食材IDを勝手に消費対象にできないようにする。
   const candidateIngredientIds = new Set(analysis.result.ingredients.map((i) => i.ingredientId));
   const unknownIngredientIds = body.data.consumedIngredients
     .map((i) => i.ingredientId)

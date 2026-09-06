@@ -51,6 +51,7 @@ export function ConsumeManualScreen(_props: Props) {
     }
     setSubmittingItemId(item.itemId);
     try {
+      // decrementByはサーバー側で原子的に減算されるため、他端末との同時実行でも減算が失われない。
       await api.updateFridgeItem(item.itemId, { decrementBy: amount });
       setAmounts((prev) => ({ ...prev, [item.itemId]: "" }));
       await load();

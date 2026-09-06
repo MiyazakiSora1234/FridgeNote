@@ -1,3 +1,4 @@
+# 管理イベントのみ記録(AWS無料枠の範囲)。データイベントは課金対象のため有効化しない。
 resource "aws_s3_bucket" "cloudtrail_logs" {
   bucket = "${var.project_name}-${var.environment}-cloudtrail-${data.aws_caller_identity.current.account_id}"
 }

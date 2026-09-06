@@ -1,3 +1,4 @@
+# GitHub Actionsに長期IAMキーを持たせず、OIDCで実行時だけ一時クレデンシャルを払い出す。
 data "tls_certificate" "github_actions" {
   url = "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
 }
@@ -8,6 +9,7 @@ resource "aws_iam_openid_connect_provider" "github" {
   thumbprint_list = [data.tls_certificate.github_actions.certificates[0].sha1_fingerprint]
 }
 
+# subクレームはリポジトリ名だけでなく不変IDも含む(GitHub側の実際の形式)ため、StringLikeでワイルドカードマッチさせる。
 locals {
   github_repository_owner = split("/", var.github_repository)[0]
   github_repository_name  = split("/", var.github_repository)[1]
@@ -107,6 +109,7 @@ data "aws_iam_policy_document" "github_actions_deploy" {
   }
 
   statement {
+    # API Gateway/Cognitoは採番IDが事前に分からずARNを絞れないため、Bedrock読み取りAPIと合わせて"*"のまま残す。
     sid = "ManageApiGatewayAndCognitoAndReadBedrock"
     actions = [
       "apigateway:*",

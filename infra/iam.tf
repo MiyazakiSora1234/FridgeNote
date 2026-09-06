@@ -34,6 +34,7 @@ data "aws_iam_policy_document" "api_lambda_policy" {
     ]
   }
   statement {
+    # 実際のキーはLambda側でuserIdを埋め込んで生成するため、バケット全体へのPutObjectで最小権限として十分。
     sid       = "PresignUpload"
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.images.arn}/*"]
@@ -82,11 +83,13 @@ data "aws_iam_policy_document" "worker_lambda_policy" {
     ]
   }
   statement {
+    # DetectDocumentTextはリソースレベル権限に非対応のため"*"必須。
     sid       = "ExtractReceiptText"
     actions   = ["textract:DetectDocumentText"]
     resources = ["*"]
   }
   statement {
+    # Transcribeもリソースレベル権限に非対応のため"*"必須。出力はAWS管理バケットから直接fetchする。
     sid       = "TranscribeAudio"
     actions   = ["transcribe:StartTranscriptionJob", "transcribe:GetTranscriptionJob"]
     resources = ["*"]

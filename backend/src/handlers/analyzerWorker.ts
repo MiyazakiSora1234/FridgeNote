@@ -155,6 +155,8 @@ async function getImageAnalysisRecordOrGiveUp(
   if (res.Item) return res.Item as ImageAnalysis;
 
   if (receiveCount >= SQS_MAX_RECEIVE_COUNT) {
+    // 最終試行でもレコードが無い = クライアントがレコード作成APIを結局呼ばなかった。
+    // ここでthrowし続けるとDLQ滞留アラームが誤発報するため、諦めて正常終了する。
     log.warn("image_analysis_record_never_created_giving_up", { receiveCount });
     return null;
   }
@@ -252,6 +254,8 @@ async function runWithFailureHandling(
       return;
     }
     if (err instanceof AiFatalError) {
+      // 再スローしてSQS再試行させると、日次トークンクォータ超過等の恒久的エラーで
+      // 無駄な再試行とアラート疲れを招くため、ここで終端させて再スローしない。
       log.error("ai_fatal_error_not_retrying", { err, reason: err.reason });
       await fail(err.reason, { terminal: true });
       return;

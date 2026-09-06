@@ -1,5 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// amazon-cognito-identity-jsはStorageを同期API(getItem/setItem)として呼ぶため、非同期な
+// AsyncStorageをそのまま渡せない。同期の読み書きはこのメモリキャッシュに対して行い、
+// AsyncStorageへは非同期で反映する(fire-and-forget)。アプリ起動時にhydrateCognitoStorage()で
+// キャッシュへ復元しておかないと、有効なRefresh Tokenが端末にあっても毎回サインイン画面に戻る。
 const KEY_PREFIX = "@FridgeNoteAuth:";
 const cache = new Map<string, string>();
 let hydratePromise: Promise<void> | null = null;

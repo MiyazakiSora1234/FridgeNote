@@ -24,6 +24,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // 永続化済みトークンをメモリキャッシュへ復元してからセッション確認する(tokenStorage.ts参照)。
     (async () => {
       await CognitoAuth.hydrateCognitoStorage();
       await refresh();

@@ -16,6 +16,7 @@ export interface TranscriptionService {
 const client = new TranscribeClient({});
 
 const POLL_INTERVAL_MS = 2000;
+// Lambdaタイムアウト(60秒)のうちBedrock呼び出し分の余裕を残すため40秒とする。
 export const TRANSCRIBE_WAIT_BUDGET_MS = 40_000;
 
 export class TranscribeTranscriptionService implements TranscriptionService {

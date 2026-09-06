@@ -119,6 +119,8 @@ export async function updateFridgeItem(
     values[":quantity"] = patch.quantity;
   }
   if (patch.decrementBy !== undefined) {
+    // 読んでから引いて書き戻す方式だと複数端末からの同時実行で減算が失われるため、
+    // DynamoDBのADD式による原子的な減算にする。
     addClause = " ADD quantity :negDelta";
     values[":negDelta"] = -patch.decrementBy;
     values[":delta"] = patch.decrementBy;
@@ -249,6 +251,7 @@ export async function consumeIngredients(
     consumedIngredients.map(async (consume): Promise<Outcome> => {
       const match = allItems.find((i) => i.ingredientId === consume.ingredientId);
       if (!match) {
+        // 在庫に無く消費できなかった食材。表示名はcandidateNames(AIの候補名)から補う。
         return { kind: "skipped", ingredientId: consume.ingredientId, reason: "not_in_fridge" };
       }
       const newQuantity = Math.max(0, match.quantity - consume.quantity);

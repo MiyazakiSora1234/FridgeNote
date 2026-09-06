@@ -92,6 +92,7 @@ export async function resolveIngredientId(
     cache?.items.push(item);
     return { ingredientId: id, name: rawName, category: categoryHint };
   } catch (err) {
+    // 同じ食材名を同時に解決しようとした別リクエストが先に作成済みのケース。再取得して合わせる。
     if (!isConditionalCheckFailed(err)) throw err;
     const existing = await getIngredientById(id);
     if (existing) return { ingredientId: existing.id, name: existing.name, category: existing.category };

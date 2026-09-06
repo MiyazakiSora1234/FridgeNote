@@ -1,3 +1,4 @@
+// 「トマト」「とまと」「tomato」等の表記ゆれを同一キーに寄せる。
 export function normalizeIngredientName(input: string): string {
   return katakanaToHiragana(fullWidthToHalfWidth(input.trim())).toLowerCase().replace(/\s+/g, "");
 }

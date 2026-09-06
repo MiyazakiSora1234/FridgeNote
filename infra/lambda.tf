@@ -1,3 +1,4 @@
+# dist/api.js, dist/analyzerWorker.js は事前に backend/ で build & package 済みであること。
 data "archive_file" "api_lambda" {
   type        = "zip"
   source_file = "${path.module}/../backend/dist/api.js"
@@ -31,6 +32,7 @@ resource "aws_lambda_function" "api" {
   memory_size = 256
   timeout     = 10
 
+  # VPCには置かない: DynamoDB/S3/Cognitoアクセスに不要で、NAT Gatewayのコストを避けるため。
   environment {
     variables = {
       TABLE_NAME         = aws_dynamodb_table.main.name
@@ -51,9 +53,10 @@ resource "aws_lambda_function" "worker" {
   source_code_hash = data.archive_file.worker_lambda.output_base64sha256
 
   memory_size = 512
-  timeout     = 60
+  timeout     = 60 # infra/sqs.tf の visibility_timeout_seconds より短くすること。
 
   environment {
+    # null(未指定)ならAI_CONFIDENCE_THRESHOLD自体を設定しない -> config.tsのコード側デフォルトを使う。
     variables = merge(
       {
         TABLE_NAME         = aws_dynamodb_table.main.name

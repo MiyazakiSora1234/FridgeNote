@@ -10,6 +10,7 @@ export const ddb = DynamoDBDocumentClient.from(client, {
 
 export const TABLE_NAME = config.tableName;
 
+// ConditionExpression不成立エラーかどうかの判定を一箇所にまとめる(各serviceが個別にtry/catchしない)。
 export function isConditionalCheckFailed(err: unknown): boolean {
   return (
     typeof err === "object" &&

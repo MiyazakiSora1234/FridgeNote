@@ -33,6 +33,7 @@ export const BulkCreateFridgeItemsRequestSchema = z.object({
   items: z.array(CreateFridgeItemRequestSchema.omit({ sourceAnalysisId: true })).min(1).max(50),
 });
 
+// decrementByはDynamoDBのADD式で原子的に減算するための専用フィールドで、quantityとは併用しない。
 export const UpdateFridgeItemRequestSchema = z
   .object({
     quantity: z.number().finite().nonnegative().max(100000).optional(),

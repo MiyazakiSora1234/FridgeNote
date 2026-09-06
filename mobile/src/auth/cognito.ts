@@ -15,6 +15,8 @@ const userPool = new CognitoUserPool({
   Storage: cognitoStorage,
 });
 
+// CognitoUserはStorageを渡さないとPool側の設定を引き継がずデフォルト実装にフォールバックするため、
+// 生成箇所では必ず明示的に同じStorageを渡す。
 function newCognitoUser(email: string): CognitoUser {
   return new CognitoUser({ Username: email, Pool: userPool, Storage: cognitoStorage });
 }
@@ -63,6 +65,8 @@ export async function signOut(): Promise<void> {
   const user = userPool.getCurrentUser();
   if (!user) return;
   try {
+    // globalSignOutでサーバー側のRefresh Tokenも失効させる。ベストエフォートとし、
+    // 失敗してもローカルのサインアウト(finally)は必ず行う。
     await getSession(user);
     await new Promise<void>((resolve) => {
       user.globalSignOut({

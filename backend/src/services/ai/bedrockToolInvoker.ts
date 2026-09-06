@@ -4,6 +4,8 @@ import { config } from "../../lib/config.js";
 import { logger } from "../../lib/logger.js";
 import { AiFatalError, AiInvocationError, AiResponseInvalidError } from "./errors.js";
 
+// Vision/Receipt/Voiceの各Adapterが共有するBedrock Converse API呼び出しの共通ロジック
+// (リトライ・タイムアウト予算・エラー分類)。Adapterごとに個別実装すると重複するため一本化する。
 const client = new BedrockRuntimeClient({});
 
 const MODEL_ID = config.bedrockModelId;

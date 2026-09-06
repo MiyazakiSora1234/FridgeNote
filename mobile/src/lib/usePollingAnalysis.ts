@@ -27,6 +27,7 @@ export function usePollingAnalysis<T extends { status: string }>(
     const poll = async () => {
       if (cancelled) return;
       if (AppState.currentState !== "active") {
+        // バックグラウンド中は無駄なAPIコールを避け、フォアグラウンド復帰時に再開する。
         deferredWhileBackground = true;
         return;
       }

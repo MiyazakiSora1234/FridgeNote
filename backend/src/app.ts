@@ -9,6 +9,8 @@ import { fridgeRoute } from "./routes/fridge.js";
 import { voiceRoute } from "./routes/voice.js";
 import { ingredientsRoute } from "./routes/ingredients.js";
 
+// CORSはAPI Gateway側のcors_configuration(infra/apigateway.tf)だけで完結させる。
+// ここでHonoのcors()も重ねると許可オリジンの設定元が2箇所に分散するため付けない。
 export const app = new Hono<AppEnv>();
 
 app.onError((err, c) => {

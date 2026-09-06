@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+// バックエンドのレスポンス形状をここで検証する(型注釈だけでは実際の形を保証できないため)。
+// このファイルが型定義の単一の情報源であり、types/index.tsはここから再エクスポートする。
 export const ExpiryStatusSchema = z.enum(["expired", "soon", "ok", "none"]);
 
 export const FridgeItemSchema = z.object({

@@ -36,6 +36,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "images" {
   }
 }
 
+# Expo Web用(ネイティブのfetchはブラウザCORSの制約を受けないため必須ではない)。
 resource "aws_s3_bucket_cors_configuration" "images" {
   bucket = aws_s3_bucket.images.id
 

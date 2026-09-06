@@ -10,6 +10,7 @@ analysesRoute.post("/", async (c) => {
   const body = CreateAnalysisRequestSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!body.success) throw validationErrorFromZod(body.error);
 
+  // 自分の名前空間以外のimageKeyを指していないか検証(他人の画像を解析させられないようにする防御)。
   const userId = c.get("userId");
   if (!body.data.imageKey.startsWith(`users/${userId}/uploads/`)) {
     throw ForbiddenError("imageKey does not belong to the authenticated user");

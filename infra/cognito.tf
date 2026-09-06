@@ -24,6 +24,7 @@ resource "aws_cognito_user_pool" "main" {
   }
 }
 
+# モバイル(パブリッククライアント)用。React Native側で安全に保持できないためシークレットは発行しない。
 resource "aws_cognito_user_pool_client" "mobile" {
   name         = "${var.project_name}-${var.environment}-mobile"
   user_pool_id = aws_cognito_user_pool.main.id

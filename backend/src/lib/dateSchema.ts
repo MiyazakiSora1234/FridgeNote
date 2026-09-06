@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+// 正規表現だけだと"2026-13-45"のような実在しない日付も通ってしまう(Dateへの変換時に
+// 自動繰り上げされるだけでエラーにならない)ため、変換結果を往復チェックする。
 export const DateOnlyStringSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "expected date in YYYY-MM-DD format")

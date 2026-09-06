@@ -17,6 +17,7 @@ export function VoiceRecordScreen({ navigation }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const recordingRef = useRef<Audio.Recording | null>(null);
 
+  // 録音中に画面を離れてコンポーネントが破棄されると、マイクリソースが握られたままになるため解放する。
   useEffect(() => {
     return () => {
       recordingRef.current?.stopAndUnloadAsync().catch(() => undefined);

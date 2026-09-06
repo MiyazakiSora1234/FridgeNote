@@ -6,7 +6,7 @@ resource "aws_sqs_queue" "analysis_dlq" {
 resource "aws_sqs_queue" "analysis_queue" {
   name = "${var.project_name}-${var.environment}-analysis-queue"
 
-  visibility_timeout_seconds = 90
+  visibility_timeout_seconds = 90 # infra/lambda.tf の worker timeout より長く設定すること。
   message_retention_seconds  = 60 * 60 * 24 * 4
 
   redrive_policy = jsonencode({

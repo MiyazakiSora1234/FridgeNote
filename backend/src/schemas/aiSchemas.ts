@@ -109,4 +109,5 @@ export const RawDishAnalysisSchema = z.object({
 });
 export type RawDishAnalysis = z.infer<typeof RawDishAnalysisSchema>;
 
+// mobile/src/constants.ts の同名の閾値と値を一致させること(scripts/check-shared-constants.mjsで検証)。
 export const LOW_CONFIDENCE_THRESHOLD = 0.6;

@@ -14,5 +14,6 @@ export const config = {
   tableName: process.env.TABLE_NAME ?? "FridgeNoteTable",
   imagesBucketName: requireEnv("IMAGES_BUCKET_NAME"),
   bedrockModelId: process.env.BEDROCK_MODEL_ID ?? "amazon.nova-lite-v1:0",
+  // 環境変数で上書き可能: 実際の認識精度を見ながら再デプロイ不要でチューニングできるように。
   aiConfidenceThreshold: Number(process.env.AI_CONFIDENCE_THRESHOLD ?? LOW_CONFIDENCE_THRESHOLD),
 };

@@ -29,6 +29,7 @@ resource "aws_dynamodb_table" "main" {
     type = "S"
   }
 
+  # 賞味期限が近い順にFridgeItemを取得するためのインデックス。
   global_secondary_index {
     name            = "GSI1"
     hash_key        = "GSI1PK"
@@ -36,6 +37,7 @@ resource "aws_dynamodb_table" "main" {
     projection_type = "ALL"
   }
 
+  # 食材マスターの正規化名からingredientIdを引くためのインデックス。
   global_secondary_index {
     name            = "GSI3"
     hash_key        = "GSI3PK"

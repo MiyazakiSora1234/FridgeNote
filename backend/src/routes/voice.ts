@@ -10,6 +10,7 @@ voiceRoute.post("/transcriptions", async (c) => {
   const body = CreateVoiceTranscriptionRequestSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!body.success) throw validationErrorFromZod(body.error);
 
+  // 自分の名前空間以外のaudioKeyを指していないか検証(他人の音声を解析させられないようにする防御)。
   const userId = c.get("userId");
   if (!body.data.audioKey.startsWith(`users/${userId}/audio/`)) {
     throw ForbiddenError("audioKey does not belong to the authenticated user");

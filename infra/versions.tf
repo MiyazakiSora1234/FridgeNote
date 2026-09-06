@@ -16,6 +16,7 @@ terraform {
     }
   }
 
+  # バケット/テーブルはこのリポジトリの外で一度だけ手動ブートストラップ済み。
   backend "s3" {
     bucket         = "fridgenote-tfstate-125192672369"
     key            = "fridgenote/terraform.tfstate"
