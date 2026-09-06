@@ -192,10 +192,19 @@ Response 200:
 ## PATCH /v1/fridge/items/:id
 数量・賞味期限などの部分更新。
 
-Request例:
+Request例(絶対値で上書き):
 ```json
 { "quantity": 250, "expiresAt": "2026-09-12" }
 ```
+
+Request例(手動で減らす。`decrementBy`は`quantity`と同時指定不可):
+```json
+{ "decrementBy": 50 }
+```
+`quantity`は「渡した値で上書き」だが、`decrementBy`はサーバー側でDynamoDBのADD式により
+原子的に減算する。複数端末から同時に呼ばれても減算が失われない(lost updateを起こさない)ようにするため、
+手動での在庫減算画面はこちらを使う。減算した結果が負になる場合(在庫不足、他端末での操作等で
+表示していた在庫が古くなっていた場合)は409を返す。
 
 ## DELETE /v1/fridge/items/:id
 在庫から削除。

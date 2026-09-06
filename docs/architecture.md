@@ -76,6 +76,7 @@ flowchart TB
 - API Gateway HTTP API の **JWT Authorizer** (Cognito User Pool をIssuerに設定) をルートに適用し、Lambda到達前にJWTを検証。
 - Lambda(Hono)側でも `event.requestContext.authorizer.jwt.claims.sub` から `userId` を取得し、**クライアントが送ってきた `userId` は一切信用しない**。すべてのDB操作はこの `sub` を使う。
 - Identity Pool(AWS認証情報付与)は使わない。S3 Presigned URLはバックエンドのLambda実行ロールで署名して払い出すため、モバイル側にAWS権限を持たせる必要がない → IAM設計がシンプルになりセキュリティ面でも有利。
+- CORSはAPI Gateway HTTP APIの`cors_configuration`(`infra/apigateway.tf`、`var.cors_allowed_origins`)だけで完結させる。HTTP APIはプリフライト(OPTIONS)をAPI Gateway層で処理し実レスポンスへもヘッダーを付与するため、Lambda(Hono)側に別途CORSミドルウェアを重ねる必要はなく、むしろ許可オリジンの設定元が2箇所に分散する原因になる(以前はHono側にも`cors()`があったため撤去した)。
 
 ## 3. 画像アップロード & AI解析フロー(詳細)
 
@@ -140,6 +141,7 @@ Analyzer WorkerがS3オブジェクトキーのプレフィックス `users/{sub
 | Bedrockの一過性エラー(秒間ThrottlingException・タイムアウト等) | 3回まで指数バックオフ(300ms/600ms/1200ms)で再試行 → それでも失敗すれば`status=failed`(`errorReason`はprocessing_error)とし例外を再スロー → SQS再配信(最大3回)→ 最終的にDLQ |
 | Bedrockの致命的エラー(`AccessDeniedException`/`ValidationException`/`ResourceNotFoundException`/`UnrecognizedClientException`、および**日次トークンクォータ超過**=`ThrottlingException`で"Too many tokens per day"を含むもの) | **ローカルリトライすらせず即座に`AiFatalError`として`status=failed`**(`errorReason`は`bedrock_quota_exceeded`等の専用値)にし、**例外を再スローしない**(SQS再配信させない)。これらは何度リトライしても同じ理由で必ず失敗し、日次クォータ超過の場合は再配信のたびに枯渇したクォータをさらに消費してしまうため、他のThrottlingExceptionとは明確に区別している |
 | SQSメッセージ自体の処理異常(Lambda例外) | maxReceiveCount=3 → 超過でDLQへ。DLQ滞留数をCloudWatchでアラーム |
+| S3アップロード成功後、クライアントが`POST /v1/analyses`(または`/v1/voice/transcriptions`)を結局呼ばなかった(アプリを閉じた・通信断等) | S3イベントは発火するがDynamoDBレコードが無いため、最初の数回は「まだ来ていないだけ」として通常通り再試行するが、SQSの最終配信試行(`ApproximateReceiveCount`がmaxReceiveCountに到達)でも見つからなければ諦めて正常終了する(DLQへは送らない)。何も問題が起きていないのにDLQ滞留アラームを鳴らし続け、本当の異常を見逃す(アラート疲れ)のを避けるため |
 | AIレスポンスのJSON不正 | Zodでバリデーション失敗 → `status=failed`理由を記録、DLQ送りにしない(再試行しても直らないため無限リトライを避ける) |
 | 重複ジョブ(同時に2つのSQSメッセージ) | DynamoDB条件付き書き込みで後勝ちを防止 |
 
@@ -207,6 +209,29 @@ Bedrockを呼ぶ3つのService(Vision/Receipt/Voice)は、リトライ・タイ�
 将来、自前推論API(SageMaker等)や別のOCR/音声認識サービスに切り替える場合は、
 該当インターフェースを満たす別Adapterを追加し、DIで差し替えるのみで済む構成とする。
 
+### IngredientSearchService・食材マスター解決の段階的設計
+
+食材名のあいまい検索(手動入力のサジェスト、レシート/音声結果の食材マスターへの正規化)は、
+現状 `AliasIngredientSearchService` が「完全一致→別名一致→部分一致」の順にスコアリングする
+文字列ベースの実装(食材マスター全件をメモリにロードして検索)になっている。
+OpenSearch/ベクターDBは、5ユーザー規模・食材マスター数百件程度の現状では
+運用コスト(OpenSearch Serverlessは最低でも月$700程度〜)に見合わないため導入しない。
+`IngredientSearchService` インターフェースの背後にある実装を差し替えるだけで、
+将来的に埋め込みベクター検索等へ移行できる設計にしてある。
+
+完全一致・別名(alias)完全一致の判定は、レシート/音声結果を食材マスターへ正規化する
+`resolveIngredientId`(ingredientMaster.ts)と、この検索サービスの両方が必要とするため、
+`loadIngredientIndex()`が返すMap(正規化名→食材、正規化alias→食材)を共有している
+(以前は同じ線形スキャンによる判定ロジックを2箇所に個別実装していた)。これにより
+完全一致・alias一致の判定はO(1)になる(部分一致だけは任意の部分文字列同士の比較のため
+引き続き全件スキャンする)。
+
+食材マスターへの新規登録は、`ingredientId`を正規化名のSHA256から決定論的に導出し
+(`ingredient_<hash>`)、DynamoDBの条件付き書き込みで重複作成を防いでいる(詳細は
+[docs/dynamodb-design.md](dynamodb-design.md)のIngredient節)。レシート/音声の一括登録は
+複数食材をまとめて並列処理するため、同じ未登録食材名が同時に複数リクエストへ渡ることがあり、
+ランダムID採番のままだと食材マスターに重複行ができてしまう問題があった。
+
 ## 7. ログ基盤(構造化ログ)
 
 以前は各所が `console.log("メッセージ", 値1, 値2)` のように自由形式でログを出しており、
@@ -232,13 +257,3 @@ CloudWatch Logs Insightsで「特定のanalysisIdの一連の処理を追う」�
   これにより「いつ・どのくらいの頻度で・どのエラー理由で」Bedrock呼び出しが失敗しているかを
   CloudWatch Logs Insightsから追えるようにしている(今回のBedrock日次トークンクォータ超過調査を
   踏まえた追加)。
-
-### IngredientSearchServiceの段階的設計
-
-食材名のあいまい検索(手動入力のサジェスト、レシート/音声結果の食材マスターへの正規化)は、
-現状 `AliasIngredientSearchService` が「完全一致→別名一致→部分一致」の順にスコアリングする
-文字列ベースの実装(食材マスター全件をメモリにロードして検索)になっている。
-OpenSearch/ベクターDBは、5ユーザー規模・食材マスター数百件程度の現状では
-運用コスト(OpenSearch Serverlessは最低でも月$700程度〜)に見合わないため導入しない。
-`IngredientSearchService` インターフェースの背後にある実装を差し替えるだけで、
-将来的に埋め込みベクター検索等へ移行できる設計にしてある。

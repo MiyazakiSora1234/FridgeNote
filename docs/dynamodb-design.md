@@ -12,7 +12,7 @@
 | 3 | 賞味期限が近い順にソート(アプリ側 or GSI) | GSI1: PK=`USER#<userId>`, SK=`EXPIRES#<expiresAt>` |
 | 4 | 画像解析ジョブの作成・状態更新 | PK=`USER#<userId>`, SK=`ANALYSIS#<analysisId>` |
 | 5 | 解析結果を analysisId 単体で取得(所有者チェック込み) | PK=`USER#<userId>`, SK=`ANALYSIS#<analysisId>` |
-| 6 | imageKeyから解析ジョブの重複作成を防止(冪等性) | GSI2: PK=`IMAGEKEY#<imageKey>` |
+| 6 | imageKeyから解析ジョブの重複作成を防止(冪等性) | `analysisId`をimageKeyのSHA256から決定論的に導出するため、GSIは不要(PK/SKで直接引ける。以前はGSI2を用意していたが、この方式へ移行済みで実際には使われていなかったため撤去した) |
 | 7 | 料理解析(RecipeAnalysis)の一覧・取得 | PK=`USER#<userId>`, SK=`RECIPE#<analysisId>` |
 | 8 | 食材マスターをid/名前から引く | PK=`INGREDIENT#<ingredientId>`(別名前引き用GSI3) |
 | 9 | 音声解析ジョブの作成・状態更新・取得 | PK=`USER#<userId>`, SK=`VOICE#<analysisId>` |
@@ -28,10 +28,6 @@
 - `GSI1PK` = `USER#<userId>`
 - `GSI1SK` = `EXPIRES#<expiresAt(ISO8601)>`
 - 用途: 賞味期限が近い順に冷蔵庫アイテムをクエリ(`FridgeItem`のみに設定)
-
-### GSI2: `ImageKeyIndex`
-- `GSI2PK` = `IMAGEKEY#<imageKey>`
-- 用途: Analyzer WorkerがS3イベントから受け取った`imageKey`で既存の`ImageAnalysis`を検索し、重複処理を判定
 
 ### GSI3: `IngredientNameIndex`
 - `GSI3PK` = `INGREDIENT_MASTER`(固定値。件数が少ない前提でスキャンに近いが問題ない規模)
@@ -60,8 +56,6 @@ GSI1SK: EXPIRES#<expiresAt>
 ```
 PK:    USER#<userId>
 SK:    ANALYSIS#<analysisId>
-GSI2PK: IMAGEKEY#<imageKey>
-GSI2SK: ANALYSIS#<analysisId>
 {
   entityType: "ImageAnalysis",
   userId, analysisId, imageKey,
@@ -80,6 +74,7 @@ GSI2SK: ANALYSIS#<analysisId>
      items: [{ name, ingredientId, quantity, unit, confidence, belowConfidenceThreshold }]
   } | null,
   errorReason?: string,
+  terminallyFailed?: boolean, // trueならリトライしても絶対に成功しない失敗(AiFatalError)。再処理をブロックする
   userFeedback?: object,   // ユーザーが確定/修正した最終値(将来の学習データ用)
   createdAt, updatedAt
 }
@@ -98,6 +93,7 @@ SK:    VOICE#<analysisId>
   transcript?: string,        // Transcribeによる文字起こし結果(completedになった時点で設定)
   result: { items: [{ name, ingredientId, quantity, unit, confidence, belowConfidenceThreshold }] } | null,
   errorReason?: string,
+  terminallyFailed?: boolean, // ImageAnalysisと同じ意味
   userFeedback?: object,
   createdAt, updatedAt,
   ttl?: number                // ImageAnalysisと同じ90日
@@ -112,6 +108,9 @@ SK:    RECIPE#<analysisId>
 {
   entityType: "RecipeAnalysis",
   userId, analysisId, dishName,
+  // consumed=falseの項目(在庫に無くskipされた食材)のnameは、AIが候補として提示した
+  // 名前(analysis.result.ingredients由来)を使う。FridgeItemを持たないため
+  // 実際の登録名は分からず、あくまでAI認識時点の表示名。
   ingredients: [{ ingredientId, name, confidence, consumed: boolean, consumedQuantity, unit }],
   createdAt
 }
@@ -130,8 +129,15 @@ GSI3SK: NAME#<normalizedName>
   createdAt
 }
 ```
+`ingredientId`は正規化名(`normalizeIngredientName`)のSHA256から`ingredient_<hash>`の形で決定論的に導出する
+(ImageAnalysis/VoiceAnalysisの`analysisId`と同じ考え方)。ULID等のランダムIDにしていた場合、レシート/音声の
+一括正規化のように同じ未登録食材名を複数リクエストが同時に処理すると、それぞれ別IDで重複登録してしまう
+競合状態があったため、この方式に変更した。同じ正規化名は必ず同じIDに収束し、後発のPutは
+`ConditionExpression: attribute_not_exists(PK)`で弾かれて先着の結果を再利用する。
+
 (別名それぞれについても `GSI3SK = NAME#<normalized alias>` を持つ複製アイテムを `SK: ALIAS#<alias>` で追加登録し、
-別名からも1発で引けるようにする方式も可。MVPでは全件ロードしてメモリ内でマッチングする実装を採用し、テーブル設計はそのまま将来のGSI直引きにも対応できる形にしてある。)
+別名からも1発で引けるようにする方式も可。MVPでは全件ロードしてメモリ内でマッチングする実装(完全一致・alias一致は
+Map索引化、部分一致は線形スキャン)を採用し、テーブル設計はそのまま将来のGSI直引きにも対応できる形にしてある。)
 
 ## 4. TTLの利用
 `ImageAnalysis` は解析完了後も一定期間(例: 90日)保持したのち自動削除してよいため、`ttl` 属性(epoch秒)をDynamoDB TTLに設定しストレージコストを抑制する。`FridgeItem` / `Ingredient` にはTTLを設定しない。
