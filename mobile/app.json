@@ -12,6 +12,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "食材や料理を撮影して冷蔵庫に登録するためにカメラを使用します。",
         "NSPhotoLibraryUsageDescription": "食材や料理の写真をアルバムから選んで登録するために写真ライブラリを使用します。",
+        "NSMicrophoneUsageDescription": "音声で食材を追加するためにマイクを使用します。",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -23,7 +24,8 @@
       },
       "permissions": [
         "CAMERA",
-        "READ_MEDIA_IMAGES"
+        "READ_MEDIA_IMAGES",
+        "RECORD_AUDIO"
       ]
     },
     "extra": {

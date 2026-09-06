@@ -1,55 +1,29 @@
-import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import React from "react";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import type { ImageAnalysis } from "../types";
 import { api } from "../api/client";
-import { getErrorMessage } from "../lib/getErrorMessage";
+import { usePollingAnalysis } from "../lib/usePollingAnalysis";
 import { ManualFallback } from "./analysisResult/ManualFallback";
 import { FoodConfirmForm } from "./analysisResult/FoodConfirmForm";
 import { DishConfirmForm } from "./analysisResult/DishConfirmForm";
+import { ParsedItemsBulkForm } from "./analysisResult/ParsedItemsBulkForm";
 import { colors, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AnalysisResult">;
 
-const POLL_INTERVAL_MS = 3000;
-const MAX_POLLS = 30; // 約90秒でタイムアウト扱いにする
-
 /**
  * AI解析結果のポーリングと、状態(解析中/失敗/タイムアウト/完了)ごとの画面出し分けだけを担う。
- * 「食材写真の確認フォーム」「料理写真の使用食材確認フォーム」は
+ * 「食材写真の確認フォーム」「料理写真の使用食材確認フォーム」「レシートの一括確認フォーム」は
  * それぞれ独立したコンポーネント(./analysisResult/)に分離している。
  */
 export function AnalysisResultScreen({ route, navigation }: Props) {
   const { analysisId } = route.params;
-  const [analysis, setAnalysis] = useState<ImageAnalysis | null>(null);
-  const [timedOut, setTimedOut] = useState(false);
-  const pollCount = useRef(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const result = await api.getAnalysis(analysisId);
-        if (cancelled) return;
-        setAnalysis(result);
-        if (result.status === "pending" || result.status === "processing") {
-          pollCount.current += 1;
-          if (pollCount.current >= MAX_POLLS) {
-            setTimedOut(true);
-            return;
-          }
-          setTimeout(poll, POLL_INTERVAL_MS);
-        }
-      } catch (e) {
-        if (!cancelled) Alert.alert("解析結果の取得に失敗しました", getErrorMessage(e));
-      }
-    };
-    poll();
-    return () => {
-      cancelled = true;
-    };
-  }, [analysisId]);
+  const { data: analysis, timedOut } = usePollingAnalysis<ImageAnalysis>(
+    () => api.getAnalysis(analysisId),
+    [analysisId],
+  );
 
   if (timedOut) {
     return <ManualFallback navigation={navigation} message="解析に時間がかかっています。手動で登録してください。" />;
@@ -75,6 +49,18 @@ export function AnalysisResultScreen({ route, navigation }: Props) {
 
   if (analysis.result.kind === "food") {
     return <FoodConfirmForm analysisId={analysisId} result={analysis.result} navigation={navigation} />;
+  }
+
+  if (analysis.result.kind === "receipt") {
+    return (
+      <ParsedItemsBulkForm
+        analysisId={analysisId}
+        source="receipt"
+        items={analysis.result.items}
+        title="🧾 レシートの読み取り結果"
+        onDone={() => navigation.popToTop()}
+      />
+    );
   }
 
   return (

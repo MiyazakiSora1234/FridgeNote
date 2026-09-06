@@ -61,6 +61,34 @@ export function ActionTile({
   );
 }
 
+/**
+ * アイコン+タイトル+説明文を横並びにした、リスト型のメニュー項目ボタン。
+ * ActionTile(正方形・アイコン+短いラベルのみ)より情報量が多い選択肢
+ * (追加/減らすメニューの各手段の説明)を出すのに使う。
+ */
+export function MenuTile({
+  emoji,
+  label,
+  description,
+  onPress,
+}: {
+  emoji: string;
+  label: string;
+  description: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={menuTileStyles.tile}>
+      <Text style={menuTileStyles.emoji}>{emoji}</Text>
+      <View style={menuTileStyles.textWrap}>
+        <Text style={menuTileStyles.label}>{label}</Text>
+        <Text style={menuTileStyles.description}>{description}</Text>
+      </View>
+      <Text style={menuTileStyles.chevron}>›</Text>
+    </TouchableOpacity>
+  );
+}
+
 /** アイコンのみの小さな丸ボタン(一覧行の削除ボタン等)。 */
 export function IconButton({
   emoji,
@@ -125,6 +153,24 @@ const tileStyles = StyleSheet.create({
   },
   emoji: { fontSize: 26 },
   label: { fontSize: 12, fontWeight: "600", color: colors.text, textAlign: "center" },
+});
+
+const menuTileStyles = StyleSheet.create({
+  tile: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  emoji: { fontSize: 28 },
+  textWrap: { flex: 1, gap: 2 },
+  label: { fontSize: 16, fontWeight: "700", color: colors.text },
+  description: { fontSize: 13, color: colors.textMuted },
+  chevron: { fontSize: 22, color: colors.textFaint },
 });
 
 const iconButtonStyles = StyleSheet.create({

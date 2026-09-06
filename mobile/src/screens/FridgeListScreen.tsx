@@ -73,9 +73,8 @@ export function FridgeListScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.tileRow}>
-        <ActionTile emoji="📷" label="食材を撮影" onPress={() => navigation.navigate("Camera", { analysisType: "food" })} />
-        <ActionTile emoji="🍳" label="料理から記録" onPress={() => navigation.navigate("Camera", { analysisType: "dish" })} />
-        <ActionTile emoji="✏️" label="手動で登録" onPress={() => navigation.navigate("AddItemManual")} />
+        <ActionTile emoji="➕" label="追加する" onPress={() => navigation.navigate("AddMenu")} />
+        <ActionTile emoji="➖" label="減らす" onPress={() => navigation.navigate("ConsumeMenu")} />
       </View>
 
       <FlatList

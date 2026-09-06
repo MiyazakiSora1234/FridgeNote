@@ -10,6 +10,10 @@ export type {
   FoodAnalysisResult,
   DishAnalysisIngredient,
   DishAnalysisResult,
+  ParsedIngredientItem,
+  ReceiptAnalysisResult,
   AnalysisResult,
   ImageAnalysis,
+  VoiceAnalysis,
+  IngredientCandidate,
 } from "../api/schemas";

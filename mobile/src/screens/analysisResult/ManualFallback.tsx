@@ -6,7 +6,9 @@ import { Button } from "../../components/Button";
 import { colors, spacing, typography } from "../../theme";
 
 interface Props {
-  navigation: NativeStackNavigationProp<RootStackParamList, "AnalysisResult">;
+  // 特定の画面(AnalysisResult)に縛らず汎用的なnavigation型にすることで、
+  // 音声解析の確認画面(VoiceConfirmScreen)からも同じフォールバック表示を再利用できるようにする。
+  navigation: NativeStackNavigationProp<RootStackParamList>;
   message: string;
 }
 

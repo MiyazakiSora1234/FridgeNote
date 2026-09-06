@@ -1,13 +1,18 @@
 import type { z } from "zod";
 import { config } from "../config";
 import { getCurrentIdToken } from "../auth/cognito";
+import type { AnalysisType } from "../types";
 import {
+  BulkCreateFridgeItemsResponseSchema,
   ConsumeResponseSchema,
   CreateAnalysisResponseSchema,
+  CreateVoiceTranscriptionResponseSchema,
   FridgeItemListResponseSchema,
   FridgeItemSchema,
   ImageAnalysisSchema,
+  IngredientSearchResponseSchema,
   PresignedUrlResponseSchema,
+  VoiceAnalysisSchema,
 } from "./schemas";
 
 export class ApiClientError extends Error {
@@ -93,7 +98,8 @@ export const api = {
       PresignedUrlResponseSchema,
     ),
 
-  uploadImageToS3: async (uploadUrl: string, fileUri: string, contentType: string): Promise<void> => {
+  /** 画像・音声どちらも同じ仕組み(Presigned URLへの直接PUT)でアップロードするため共通化している。 */
+  uploadFileToS3: async (uploadUrl: string, fileUri: string, contentType: string): Promise<void> => {
     const blob = await (await fetch(fileUri)).blob();
     const res = await fetch(uploadUrl, {
       method: "PUT",
@@ -103,7 +109,7 @@ export const api = {
     if (!res.ok) throw new Error(`S3 upload failed with status ${res.status}`);
   },
 
-  createAnalysis: (imageKey: string, type: "food" | "dish") =>
+  createAnalysis: (imageKey: string, type: AnalysisType) =>
     request("/v1/analyses", { method: "POST", body: { imageKey, type } }, CreateAnalysisResponseSchema),
 
   getAnalysis: (analysisId: string) => request(`/v1/analyses/${analysisId}`, {}, ImageAnalysisSchema),
@@ -118,6 +124,13 @@ export const api = {
     sourceAnalysisId?: string;
   }) => request("/v1/fridge/items", { method: "POST", body: input }, FridgeItemSchema),
 
+  /** レシート/音声の確認画面で「すべて追加」を押したときに呼ぶ一括登録。 */
+  createFridgeItemsBulk: (input: {
+    source: "receipt" | "voice";
+    sourceAnalysisId?: string;
+    items: Array<{ ingredientName: string; quantity: number; unit: string }>;
+  }) => request("/v1/fridge/items/bulk", { method: "POST", body: input }, BulkCreateFridgeItemsResponseSchema),
+
   updateFridgeItem: (itemId: string, patch: { quantity?: number; unit?: string; expiresAt?: string | null }) =>
     request(`/v1/fridge/items/${itemId}`, { method: "PATCH", body: patch }, FridgeItemSchema),
 
@@ -127,4 +140,13 @@ export const api = {
     sourceAnalysisId: string;
     consumedIngredients: Array<{ ingredientId: string; quantity: number; unit: string }>;
   }) => request("/v1/fridge/consume", { method: "POST", body: input }, ConsumeResponseSchema),
+
+  createVoiceTranscription: (audioKey: string) =>
+    request("/v1/voice/transcriptions", { method: "POST", body: { audioKey } }, CreateVoiceTranscriptionResponseSchema),
+
+  getVoiceTranscription: (analysisId: string) =>
+    request(`/v1/voice/transcriptions/${analysisId}`, {}, VoiceAnalysisSchema),
+
+  searchIngredients: (query: string, limit?: number) =>
+    request("/v1/ingredients/search", { method: "POST", body: { query, limit } }, IngredientSearchResponseSchema),
 };

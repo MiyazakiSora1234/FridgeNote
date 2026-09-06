@@ -21,9 +21,20 @@ async function uploadAndAnalyze(
 ): Promise<void> {
   const prepared = await prepareImageForUpload(uri);
   const { imageKey, uploadUrl } = await api.createPresignedUrl(prepared.contentType);
-  await api.uploadImageToS3(uploadUrl, prepared.uri, prepared.contentType);
+  await api.uploadFileToS3(uploadUrl, prepared.uri, prepared.contentType);
   const { analysisId } = await api.createAnalysis(imageKey, analysisType);
   onDone(analysisId);
+}
+
+function hintTextFor(analysisType: AnalysisType): string {
+  switch (analysisType) {
+    case "food":
+      return "🥦 食材を撮影してください";
+    case "dish":
+      return "🍽️ 料理を撮影してください";
+    case "receipt":
+      return "🧾 レシートを撮影してください";
+  }
 }
 
 export function CameraScreen({ route, navigation }: Props) {
@@ -101,9 +112,7 @@ export function CameraScreen({ route, navigation }: Props) {
 
       <View style={styles.hintWrap}>
         <View style={styles.hintPill}>
-          <Text style={styles.hintText}>
-            {analysisType === "food" ? "🥦 食材を撮影してください" : "🍽️ 料理を撮影してください"}
-          </Text>
+          <Text style={styles.hintText}>{hintTextFor(analysisType)}</Text>
         </View>
       </View>
 
