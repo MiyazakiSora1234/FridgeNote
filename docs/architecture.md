@@ -33,11 +33,13 @@ flowchart TB
     end
 
     subgraph Async["非同期AI解析"]
-        S1[(S3: Images Bucket)]
+        S1[(S3: Images Bucket<br/>uploads/ と audio/ を共有)]
         Q1[[SQS: analysis-queue]]
         DLQ[[SQS DLQ]]
         L2[Lambda: Analyzer Worker]
-        B1{{Amazon Bedrock<br/>Nova Lite / Claude系}}
+        B1{{Amazon Bedrock<br/>Nova Lite}}
+        T1{{Amazon Textract<br/>レシートOCR}}
+        T2{{Amazon Transcribe<br/>音声文字起こし}}
     end
 
     subgraph Data["データストア"]
@@ -52,7 +54,12 @@ flowchart TB
     Q1 -- 5.poll --> L2
     Q1 -.失敗時.-> DLQ
     L2 -- 6.画像取得 --> S1
-    L2 -- 7.Invoke(画像+プロンプト) --> B1
+    L2 -- 7a.画像+プロンプト --> B1
+    L2 -- 7b.レシート画像 --> T1
+    L2 -- 7c.S3 URI --> T2
+    T1 -- OCRテキスト --> L2
+    T2 -- 文字起こし --> L2
+    L2 -- 7d.OCR/文字起こし結果+プロンプト --> B1
     B1 -- 8.構造化JSON --> L2
     L2 -- 9.検証/正規化して保存 --> D1
     A2 <-- 一覧/更新/削除 --> L1
@@ -87,6 +94,42 @@ flowchart TB
 11. モバイルは `GET /v1/analyses/:id` をポーリング(3秒間隔・最大30回程度)して結果を取得。
 12. ユーザーが確認・修正 → `POST /v1/fridge/items`(食材登録)または `POST /v1/fridge/consume`(在庫減算)を呼んで初めてFridgeItemが変更される。**AIの出力を直接DBの確定データとして書き込む経路は存在しない**。
 
+### 3.1 レシート撮影フロー
+
+`type=receipt` で `POST /v1/analyses` を呼ぶ以外は上記と同じ経路(新しいAPI/Lambda/キューは作らない)。
+Analyzer Worker内で分岐が増える:
+
+1. S3からレシート画像を取得。
+2. **Amazon Textract**(`DetectDocumentText`、同期API)でOCRテキストを抽出。
+   非同期ジョブAPIではなく同期APIを選んだ理由: レシート1枚程度のテキスト量なら数秒で返り、
+   Lambdaのタイムアウト予算内に収まるため、ポーリングの複雑さを増やす非同期APIは不要と判断。
+3. OCRテキストをBedrockに渡し、`{ items: [{ name, quantity, unit, confidence }] }` の構造化JSONを取得
+   (税抜金額・洗剤等の非食品はプロンプトで除外するよう指示)。
+4. 各itemを食材マスターへ正規化し、`belowConfidenceThreshold`(既定0.6未満)を算出して
+   `ImageAnalysis.result = { kind: "receipt", items: [...] }` として保存。
+5. モバイルはチェックリストで確認し、`POST /v1/fridge/items/bulk` で一括登録する。
+
+### 3.2 音声入力フロー
+
+画像ではなく音声のため、`ImageAnalysis` とは別の `VoiceAnalysis` エンティティ・別エンドポイントを使うが、
+**S3イベント→SQS→Analyzer Workerという同じ非同期基盤を共有する**(音声専用のキュー/Workerは作らない。
+Analyzer WorkerがS3オブジェクトキーのプレフィックス `users/{sub}/audio/` か `users/{sub}/uploads/` かで分岐する)。
+
+1. モバイルは録音した音声(m4a)を `POST /v1/images/presigned-url`(`contentType: "audio/m4a"`)で
+   払い出された`audio/`プレフィックスのPresigned URLへPUTアップロード。
+2. `POST /v1/voice/transcriptions` でジョブを作成(`audioKey`が呼び出しユーザーの名前空間内かを検証)。
+3. S3イベントでAnalyzer Workerが起動 → **Amazon Transcribe**(`StartTranscriptionJob`→ポーリングで
+   `GetTranscriptionJob`)で文字起こし。出力先はAWS管理のデフォルトバケットを使い(専用出力バケットを
+   作らずコストと設定を最小化)、完了後 `TranscriptFileUri` をHTTPで取得してテキストを得る。
+   ジョブ名は呼び出しのたびに一意な値(`fridgenote-{keyのハッシュ}-{timestamp}`)にする
+   (Transcribeのジョブ名はAWSアカウント内で一意である必要があり、SQS再配信で同じ音声に対して
+   複数回ジョブ作成を試みても`ConflictException`にならないようにするため。冪等性自体は
+   DynamoDBの条件付き書き込み側で担保している)。
+4. 文字起こしテキストをBedrockに渡し、レシートと同じ `{ items: [...] }` 形式の構造化JSONを取得。
+5. `VoiceAnalysis.result` を更新し `status=completed`。モバイルは `GET /v1/voice/transcriptions/:id`
+   をポーリングし、レシートと同じチェックリストUI・同じ `POST /v1/fridge/items/bulk` で一括登録する
+   (確認〜一括登録のUI/APIをレシートと共通化し、二重実装を避けている)。
+
 ### 冪等性・エラー処理まとめ
 
 | 事象 | 対処 |
@@ -109,9 +152,12 @@ flowchart TB
 | DynamoDB | 永続化 | オンデマンド、無料枠(25GB等)内 | ¥0〜数十円 |
 | S3 | 画像一時保存 | 保存量小(30日で自動削除)+リクエスト課金 | 数十円 |
 | SQS | 非同期キュー | 無料枠(100万リクエスト/月) | ¥0 |
-| Bedrock (Nova Lite等) | 画像解析 | 入出力トークン課金(1回あたり画像1枚+短文) | 5人×数回/日でも数十〜100円程度 |
+| Bedrock (Nova Lite等) | 画像/レシート/音声のテキスト解析 | 入出力トークン課金(1回あたり画像1枚 or 短文+短文) | 5人×数回/日でも数十〜100円程度 |
+| Textract | レシートOCR(同期API) | ページ数課金($1.50/1,000ページ相当) | 5人×週数回程度なら¥10未満 |
+| Transcribe | 音声文字起こし | 秒課金($0.024/分)。1回数十秒想定 | 5人×数回/日でも¥50未満 |
+| CloudTrail | 監査ログ(管理イベントのみ) | リージョンにつき1証跡までの管理イベント記録は無料枠 | ¥0 |
 | CloudWatch Logs | 監視 | 保持14日、ログ量小 | 数十円 |
-| **合計** | | | **概ね ¥200〜500/月**、余裕を持って¥1,000以下に収まる |
+| **合計** | | | **概ね ¥250〜600/月**、余裕を持って¥1,000以下に収まる |
 
 コストを増大させる典型的な落とし穴として以下は明示的に避ける:
 - Lambdaを VPC 内に置く(NAT Gateway ¥4,500〜/月)
@@ -123,10 +169,42 @@ flowchart TB
 ## 5. IAM最小権限方針
 
 - API Lambda実行ロール: DynamoDB(自テーブルのみ、Fine-Grained Access ControlでPK先頭が`USER#<sub>`の項目のみに制限するアプリ側チェックと併用)、S3(`PutObject`用Presigned URL署名権限は`s3:PutObject`のみ、対象バケットのみ)。
-- Worker Lambda実行ロール: S3 `GetObject`(対象バケットのみ)、DynamoDB読み書き、Bedrock `InvokeModel`(対象モデルARNのみ)、SQS `ReceiveMessage/DeleteMessage/ChangeMessageVisibility`。
+- Worker Lambda実行ロール: S3 `GetObject`(対象バケットのみ)、DynamoDB読み書き、Bedrock `InvokeModel`(対象モデルARNのみ)、
+  Textract `DetectDocumentText`、Transcribe `StartTranscriptionJob`/`GetTranscriptionJob`
+  (Textract/Transcribeはどちらもリソースレベル権限に対応していないAPIのため`Resource: "*"`が必須。
+  そのぶんアクションを個別の読み取り専用API単位まで絞り込んでいる)、
+  SQS `ReceiveMessage/DeleteMessage/ChangeMessageVisibility`。
 - Secrets Manager / SSM Parameter Store: Bedrockのモデルidやしきい値等の設定値を保持(APIキー的な機密情報は基本的にIAMロールで代替されるため最小限)。
+- CloudTrail: 管理イベントのみを記録する単一リージョンの証跡を1つ作成(`infra/cloudtrail.tf`)。
+  データイベント(S3オブジェクト単位のGet/Put等)は課金対象かつ本規模では監査上の必要性も薄いため有効化しない。
 
-## 6. 将来の自前AI推論への置き換えに備えた設計
+## 6. AI Adapter / Service構成(将来の実装差し替えに備えた設計)
 
-`backend/src/services/ai/` に `VisionAnalysisAdapter` インターフェースを定義し、`BedrockVisionAdapter` を実装。
-将来、自前推論API(SageMaker等)に切り替える場合は同インターフェースを満たす別Adapterを追加し、DIで差し替えるのみで済む構成とする。
+`backend/src/services/ai/` に用途ごとのインターフェースを定義し、Bedrock/Textract/Transcribeを使う
+「本番実装」と、テストで使う「Mock実装」の両方を用意している。テストではモック実装のみを使い、
+**実際のBedrock/Textract/Transcribeを呼び出すことはない**。
+
+| インターフェース | 本番実装 | Mock実装 | 用途 |
+|---|---|---|---|
+| `VisionAIService` | `BedrockVisionAdapter` | (テスト内で個別にモック) | 食材/料理画像の認識 |
+| `OcrService` | `TextractOcrService` | `MockOcrService` | レシート画像のOCR |
+| `TranscriptionService` | `TranscribeTranscriptionService` | `MockTranscriptionService` | 音声の文字起こし |
+| `ReceiptAnalysisService` | `BedrockReceiptAnalysisService` | `MockReceiptAnalysisService` | OCRテキスト→構造化食材リスト |
+| `VoiceAnalysisService` | `BedrockVoiceAnalysisService` | `MockVoiceAnalysisService` | 文字起こしテキスト→構造化食材リスト |
+| `IngredientSearchService` | `AliasIngredientSearchService` | (実装自体がAI非依存の文字列マッチングのため単一実装) | 食材名の曖昧検索・正規化 |
+
+Bedrockを呼ぶ3つのService(Vision/Receipt/Voice)は、リトライ・タイムアウト・Tool Use呼び出しといった
+共通ロジックを `bedrockToolInvoker.ts` に1箇所へ集約している(同じロジックを3箇所にコピーしない)。
+
+将来、自前推論API(SageMaker等)や別のOCR/音声認識サービスに切り替える場合は、
+該当インターフェースを満たす別Adapterを追加し、DIで差し替えるのみで済む構成とする。
+
+### IngredientSearchServiceの段階的設計
+
+食材名のあいまい検索(手動入力のサジェスト、レシート/音声結果の食材マスターへの正規化)は、
+現状 `AliasIngredientSearchService` が「完全一致→別名一致→部分一致」の順にスコアリングする
+文字列ベースの実装(食材マスター全件をメモリにロードして検索)になっている。
+OpenSearch/ベクターDBは、5ユーザー規模・食材マスター数百件程度の現状では
+運用コスト(OpenSearch Serverlessは最低でも月$700程度〜)に見合わないため導入しない。
+`IngredientSearchService` インターフェースの背後にある実装を差し替えるだけで、
+将来的に埋め込みベクター検索等へ移行できる設計にしてある。

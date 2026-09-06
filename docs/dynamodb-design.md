@@ -15,6 +15,8 @@
 | 6 | imageKeyから解析ジョブの重複作成を防止(冪等性) | GSI2: PK=`IMAGEKEY#<imageKey>` |
 | 7 | 料理解析(RecipeAnalysis)の一覧・取得 | PK=`USER#<userId>`, SK=`RECIPE#<analysisId>` |
 | 8 | 食材マスターをid/名前から引く | PK=`INGREDIENT#<ingredientId>`(別名前引き用GSI3) |
+| 9 | 音声解析ジョブの作成・状態更新・取得 | PK=`USER#<userId>`, SK=`VOICE#<analysisId>` |
+| 10 | audioKeyから音声解析ジョブの重複作成を防止(冪等性) | `analysisId`を`imageKey`と同じ方式(キーのSHA256決定論的ID)で導出するため、専用GSIは不要(PK/SKで直接引ける) |
 
 ## 2. テーブル定義
 
@@ -50,7 +52,7 @@ GSI1SK: EXPIRES#<expiresAt>
   quantity: number, unit: string,
   expiresAt: string | null,   // ISO8601 date
   createdAt, updatedAt,
-  source: "manual" | "image_food" | "image_dish_consume"
+  source: "manual" | "image_food" | "image_dish_consume" | "receipt" | "voice"
 }
 ```
 
@@ -63,7 +65,7 @@ GSI2SK: ANALYSIS#<analysisId>
 {
   entityType: "ImageAnalysis",
   userId, analysisId, imageKey,
-  type: "food" | "dish",
+  type: "food" | "dish" | "receipt",
   status: "pending" | "processing" | "completed" | "failed",
   result: {
      // type=food の場合
@@ -72,10 +74,33 @@ GSI2SK: ANALYSIS#<analysisId>
      // type=dish の場合
      dish: string,
      ingredients: [{ name, ingredientId, confidence }]
+  } | {
+     // type=receipt の場合(ParsedIngredientItem[]。voiceのresult.itemsと同じ形)
+     kind: "receipt",
+     items: [{ name, ingredientId, quantity, unit, confidence, belowConfidenceThreshold }]
   } | null,
   errorReason?: string,
   userFeedback?: object,   // ユーザーが確定/修正した最終値(将来の学習データ用)
   createdAt, updatedAt
+}
+```
+
+### VoiceAnalysis
+画像ではないため `ImageAnalysis` とは別エンティティにしているが、ステータス遷移・冪等性・
+`userFeedback`記録の考え方は完全に共通(`analysisId`は`audioKey`から`imageKey`と同じ方式で決定論的に導出)。
+```
+PK:    USER#<userId>
+SK:    VOICE#<analysisId>
+{
+  entityType: "VoiceAnalysis",
+  userId, analysisId, audioKey,
+  status: "pending" | "processing" | "completed" | "failed",
+  transcript?: string,        // Transcribeによる文字起こし結果(completedになった時点で設定)
+  result: { items: [{ name, ingredientId, quantity, unit, confidence, belowConfidenceThreshold }] } | null,
+  errorReason?: string,
+  userFeedback?: object,
+  createdAt, updatedAt,
+  ttl?: number                // ImageAnalysisと同じ90日
 }
 ```
 

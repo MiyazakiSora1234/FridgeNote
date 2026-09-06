@@ -33,11 +33,24 @@ Request:
 ```json
 { "imageKey": "users/abc123/uploads/uuid.jpg", "type": "food" }
 ```
-`type`: `"food"`(食材写真) | `"dish"`(料理写真)
+`type`: `"food"`(食材写真) | `"dish"`(料理写真) | `"receipt"`(レシート写真)
 
 Response 201:
 ```json
 { "analysisId": "a1b2c3", "status": "pending" }
+```
+
+`type=receipt` の場合、完了後の `GET /v1/analyses/:id` の `result` は以下の形になる
+(voiceの`result.items`と同じ`ParsedIngredientItem[]`形式。専用のレシート確認APIは作らず、
+既存の解析ジョブAPIをそのまま再利用している):
+```json
+{
+  "kind": "receipt",
+  "items": [
+    { "name": "鶏もも肉", "ingredientId": "ingredient_010", "quantity": 1, "unit": "pack", "confidence": 0.96, "belowConfidenceThreshold": false },
+    { "name": "玉ねぎ", "ingredientId": "ingredient_005", "quantity": 1, "unit": "個", "confidence": 0.3, "belowConfidenceThreshold": true }
+  ]
+}
 ```
 
 ## GET /v1/analyses/:id
@@ -96,6 +109,86 @@ Request:
 
 Response 201: 作成された `FridgeItem`
 
+## POST /v1/fridge/items/bulk
+レシート/音声の確認画面で「すべて追加」を押したときに呼ぶ一括登録。
+単品登録(`POST /v1/fridge/items`)のバリデーションルールをそのまま複数件に適用するだけの
+シンプルな責務(「渡されたものは全部登録する」)で、チェックを外した項目は呼び出し側(モバイル)が
+`items`に含めない前提。
+
+Request:
+```json
+{
+  "source": "receipt",
+  "sourceAnalysisId": "a1b2c3",
+  "items": [
+    { "ingredientName": "鶏もも肉", "quantity": 1, "unit": "pack" },
+    { "ingredientName": "卵", "quantity": 1, "unit": "pack" }
+  ]
+}
+```
+`source`: `"receipt" | "voice"`。`sourceAnalysisId`は任意(渡された場合、対応する解析ジョブに
+`userFeedback`として一括確定内容を記録する)。`items`は1〜50件。
+
+Response 201:
+```json
+{ "items": [ /* 作成されたFridgeItemの配列 */ ] }
+```
+
+## POST /v1/voice/transcriptions
+音声入力の解析ジョブを作成する。`POST /v1/analyses` の音声版(エンティティが異なるため別エンドポイント)。
+
+Request:
+```json
+{ "audioKey": "users/abc123/audio/uuid.m4a" }
+```
+`audioKey`が呼び出しユーザーの名前空間(`users/{sub}/audio/`)以外を指す場合は403。
+
+Response 201:
+```json
+{ "analysisId": "v1a2b3", "status": "pending" }
+```
+
+## GET /v1/voice/transcriptions/:id
+音声解析結果を取得(ポーリング用)。`GET /v1/analyses/:id` の音声版。
+
+Response 200:
+```json
+{
+  "analysisId": "v1a2b3",
+  "audioKey": "users/abc123/audio/uuid.m4a",
+  "status": "completed",
+  "transcript": "鶏もも肉300グラムと卵6個を追加",
+  "result": {
+    "items": [
+      { "name": "鶏もも肉", "ingredientId": "ingredient_010", "quantity": 300, "unit": "g", "confidence": 0.95, "belowConfidenceThreshold": false }
+    ]
+  },
+  "createdAt": "...", "updatedAt": "..."
+}
+```
+他人の`analysisId`を指定した場合は404(`GET /v1/analyses/:id`と同じ考え方)。
+
+## POST /v1/ingredients/search
+食材マスターのあいまい検索。手動入力時のサジェスト、およびレシート/音声結果を食材マスターへ
+正規化する際に内部的に使っているのと同じロジックを、モバイル側からも呼べるようにしたもの。
+
+Request:
+```json
+{ "query": "とまと", "limit": 5 }
+```
+`limit`は省略可(既定5、最大20)。
+
+Response 200:
+```json
+{
+  "candidates": [
+    { "ingredientId": "ing_tomato", "name": "トマト", "category": "vegetable", "score": 1 }
+  ]
+}
+```
+`score`は完全一致=1、別名一致=0.9、部分一致=0.5×文字列の重なり度合い、として計算される
+(OpenSearch/ベクターDBは本規模では導入せず、食材マスター全件をメモリ上でマッチングする実装)。
+
 ## PATCH /v1/fridge/items/:id
 数量・賞味期限などの部分更新。
 
@@ -139,7 +232,7 @@ Response 200:
 ## 冪等性について
 `POST /v1/analyses` は `imageKey` から決定論的に `analysisId` を導出するため、
 再送信しても既存レコードがそのまま返るだけで自然に冪等(クライアント側でIdempotency-Keyを
-発行する必要はない)。
+発行する必要はない)。`POST /v1/voice/transcriptions` も同じ方式(`audioKey`から導出)で冪等。
 
 `POST /v1/fridge/consume` は `sourceAnalysisId` 自体が冪等性キーを兼ねる。
 DynamoDBの条件付き書き込みで「このsourceAnalysisIdに対する消費」を最初の1回だけ受け付け、

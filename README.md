@@ -1,9 +1,15 @@
 # FridgeNote
 
-食品・料理の写真から食材を認識し、冷蔵庫の在庫を管理するモバイルアプリケーション(iOS / Android)。
+食品・料理の写真・レシート・音声から食材を認識し、冷蔵庫の在庫を管理するモバイルアプリケーション(iOS / Android)。
 
 - 食材写真 → AIが食材名・カテゴリ・数量・単位・推定賞味期限・confidenceを推定 → ユーザー確認 → 冷蔵庫へ登録
 - 料理写真 → AIが料理名と「使用食材候補」をconfidence付きで推定 → 冷蔵庫在庫と照合 → ユーザーが確認したものだけ在庫を減算
+- レシート写真 → OCR(Textract)+AIでまとめて食材候補を抽出 → チェックリストで確認 → 一括登録
+- 音声入力 → 文字起こし(Transcribe)+AIで食材候補を抽出 → チェックリストで確認 → 一括登録
+- 在庫を手動で増減(1件ずつの登録 / 数量を指定して減算)
+
+いずれの経路でも、**AIやOCR/文字起こしの出力を直接DBの確定データとして書き込む経路は存在しない**。
+必ずユーザーが確認・修正してから確定APIを呼んで初めて在庫が変わる。
 
 設計判断の詳細と、最優先制約(**月額1,000円以下 / 5ユーザー想定 / AI推論はAmazon Bedrockのみ / iOS・Android対応**)を踏まえた
 アーキテクチャ上のトレードオフは [docs/architecture.md](docs/architecture.md) にまとめている。合わせて
@@ -36,17 +42,20 @@ FridgeNote/
 │   ├── src/
 │   │   ├── app.ts            Honoアプリ本体(ルーティング・エラーハンドリング)
 │   │   ├── handlers/         Lambdaエントリポイント(API本体 / Analyzer Worker)
-│   │   ├── routes/           /v1/images, /v1/analyses, /v1/fridge
+│   │   ├── routes/           /v1/images, /v1/analyses, /v1/fridge, /v1/voice, /v1/ingredients
 │   │   ├── middleware/       Cognito JWT認証ミドルウェア
-│   │   ├── services/         S3 / DynamoDB / 食材マスター正規化 / AI Adapter
-│   │   ├── services/ai/      VisionAnalysisAdapter(インターフェース)+ BedrockVisionAdapter(実装)
+│   │   ├── services/         S3 / DynamoDB / 食材マスター正規化・検索 / AI Adapter
+│   │   ├── services/ai/      VisionAIService・OcrService・TranscriptionService・
+│   │   │                     ReceiptAnalysisService・VoiceAnalysisService(各インターフェース+
+│   │   │                     Bedrock/Textract/Transcribe実装+テスト用Mock実装)
 │   │   └── schemas/          AIレスポンス用Zodスキーマ、APIリクエスト用Zodスキーマ
 │   └── test/                 単体テスト・統合テスト(vitest)
 ├── mobile/               Expo + React Native(TypeScript)
 │   └── src/
 │       ├── auth/              Cognito認証(amazon-cognito-identity-js)
 │       ├── api/                バックエンドAPIクライアント
-│       ├── screens/            サインイン/一覧/手動登録/カメラ撮影/AI結果確認
+│       ├── screens/            サインイン/一覧/追加メニュー/減らすメニュー/手動登録・減算/
+│       │                       カメラ撮影/音声録音/AI結果確認(食材・料理・レシート・音声共通)
 │       └── lib/imagePrep.ts    アップロード前の画像リサイズ・圧縮
 └── .github/workflows/    CI(backend/mobile)・手動デプロイ(Terraform)
 ```
@@ -207,8 +216,9 @@ GitHub Actions用のOIDC Provider/デプロイRole/`production` Environment/`AWS
     -v "$(pwd)/..:/workspace" -v ~/.aws:/root/.aws:ro \
     -w /workspace/infra hashicorp/terraform:1.9.0 plan
   ```
-- モバイルアプリは実機・シミュレータでの動作確認を行っていない(このサンドボックス環境にはExpo実行環境がない)。
-  `npm run typecheck` によるTypeScriptの型検証のみ完了している。カメラ権限まわりや実際のCognito認証フローは
-  実機での確認を推奨する。
+- モバイルアプリはこのサンドボックス環境ではExpo実行環境が使えないため、`npm run typecheck` /
+  `npm test` によるコード検証のみ完了している(以前のEASビルドではiOS実機での動作を別途確認済み)。
+  レシート撮影・音声入力(`expo-av`)は本フェーズで新規に追加したUIのため、次回のEAS統合ビルド後に
+  実機での動作確認(マイク権限ダイアログの表示、録音→アップロード→解析結果表示まで)を推奨する。
 - Bedrockの実際のモデル出力・料金は本番アカウントでの検証が必要(モデルIDやプロンプトは `BEDROCK_MODEL_ID`
   環境変数で変更可能)。
