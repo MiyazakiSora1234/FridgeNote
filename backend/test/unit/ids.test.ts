@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { analysisIdFromImageKey } from "../../src/lib/ids.js";
+import { deterministicIdFromKey } from "../../src/lib/ids.js";
 import { userIdFromImageKey } from "../../src/services/analysisService.js";
 
-describe("analysisIdFromImageKey", () => {
-  it("is deterministic for the same imageKey", () => {
+describe("deterministicIdFromKey", () => {
+  it("is deterministic for the same key", () => {
     const key = "users/user-1/uploads/abc.jpg";
-    expect(analysisIdFromImageKey(key)).toBe(analysisIdFromImageKey(key));
+    expect(deterministicIdFromKey(key)).toBe(deterministicIdFromKey(key));
   });
 
-  it("differs between different imageKeys", () => {
-    expect(analysisIdFromImageKey("users/user-1/uploads/a.jpg")).not.toBe(
-      analysisIdFromImageKey("users/user-1/uploads/b.jpg"),
+  it("differs between different keys", () => {
+    expect(deterministicIdFromKey("users/user-1/uploads/a.jpg")).not.toBe(
+      deterministicIdFromKey("users/user-1/uploads/b.jpg"),
     );
   });
 });

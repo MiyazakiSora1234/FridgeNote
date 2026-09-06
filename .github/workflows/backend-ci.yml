@@ -29,3 +29,8 @@ jobs:
       - run: npm ci
       - run: npx tsc -p tsconfig.json --noEmit
       - run: npm test
+      # tscとvitestが通っても、esbuildによるLambdaバンドル自体が壊れる変更
+      # (循環参照・external指定漏れ等)をマージしてしまわないよう、実際にビルドして確認する。
+      - run: npm run build
+      - run: npm run package:api
+      - run: npm run package:worker

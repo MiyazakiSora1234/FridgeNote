@@ -20,9 +20,26 @@ function resolveAttrName(name: string, names?: Record<string, string>): string {
 export function createFakeDdb() {
   const store = new Map<string, Item>();
 
+  /**
+   * 実際のConditionExpressionは "A AND B" のような複合条件になりうる
+   * (例: markProcessingの "#status <> :completed AND attribute_not_exists(terminallyFailed)")。
+   * 各節を独立に評価してすべて真の場合のみ真とする(このテスト用フェイクはOR等は未対応)。
+   */
   function evalCondition(expr: string, existing: Item | undefined, values: Record<string, unknown>): boolean {
-    if (expr === "attribute_not_exists(PK)") return !existing;
-    if (expr === "attribute_exists(PK)") return !!existing;
+    return expr.split(/\s+AND\s+/).every((clause) => evalSingleCondition(clause.trim(), existing, values));
+  }
+
+  function evalSingleCondition(expr: string, existing: Item | undefined, values: Record<string, unknown>): boolean {
+    const notExistsMatch = /^attribute_not_exists\((\w+)\)$/.exec(expr);
+    if (notExistsMatch) {
+      const attr = notExistsMatch[1] as string;
+      return !existing || existing[attr] === undefined;
+    }
+    const existsMatch = /^attribute_exists\((\w+)\)$/.exec(expr);
+    if (existsMatch) {
+      const attr = existsMatch[1] as string;
+      return !!existing && existing[attr] !== undefined;
+    }
     const neqMatch = /^#(\w+) <> :(\w+)$/.exec(expr);
     if (neqMatch) {
       const [, attr, valKey] = neqMatch;
@@ -32,6 +49,13 @@ export function createFakeDdb() {
     if (eqMatch) {
       const [, attr, valKey] = eqMatch;
       return existing?.[attr as string] === values[`:${valKey}`];
+    }
+    const gteMatch = /^#?(\w+) >= :(\w+)$/.exec(expr);
+    if (gteMatch) {
+      const [, attr, valKey] = gteMatch;
+      const current = Number(existing?.[attr as string] ?? 0);
+      const threshold = Number(values[`:${valKey}`]);
+      return current >= threshold;
     }
     return true;
   }
@@ -74,19 +98,35 @@ export function createFakeDdb() {
           ) {
             throw new ConditionalCheckFailedException("condition failed");
           }
-          const setExpr = String(input.UpdateExpression).replace(/^SET\s+/, "");
-          const assignments = setExpr.split(",").map((s) => s.trim());
           const updated: Item = { ...existing };
-          for (const assignment of assignments) {
-            const parts = assignment.split("=").map((s) => s.trim());
-            const lhsRaw = parts[0] ?? "";
-            const rhsRaw = parts[1] ?? "";
-            const attr = resolveAttrName(lhsRaw, input.ExpressionAttributeNames);
-            const value = rhsRaw.startsWith(":")
-              ? input.ExpressionAttributeValues[rhsRaw]
-              : rhsRaw;
-            updated[attr] = value;
+          const expr = String(input.UpdateExpression);
+
+          // UpdateExpressionは "SET a = :x, b = :y ADD c :z" のようにSET節・ADD節が
+          // 混在しうる(fridgeService.updateFridgeItemのdecrementBy参照)。それぞれ抽出して処理する。
+          const setMatch = /SET\s+(.+?)(?=\s+ADD\s|\s+REMOVE\s|\s+DELETE\s|$)/.exec(expr);
+          if (setMatch?.[1]) {
+            const assignments = setMatch[1].split(",").map((s) => s.trim());
+            for (const assignment of assignments) {
+              const parts = assignment.split("=").map((s) => s.trim());
+              const lhsRaw = parts[0] ?? "";
+              const rhsRaw = parts[1] ?? "";
+              const attr = resolveAttrName(lhsRaw, input.ExpressionAttributeNames);
+              const value = rhsRaw.startsWith(":") ? input.ExpressionAttributeValues[rhsRaw] : rhsRaw;
+              updated[attr] = value;
+            }
           }
+
+          const addMatch = /ADD\s+(.+?)(?=\s+SET\s|\s+REMOVE\s|\s+DELETE\s|$)/.exec(expr);
+          if (addMatch?.[1]) {
+            const additions = addMatch[1].split(",").map((s) => s.trim());
+            for (const addition of additions) {
+              const [attrRaw, valKeyRaw] = addition.split(/\s+/);
+              const attr = resolveAttrName(attrRaw ?? "", input.ExpressionAttributeNames);
+              const delta = Number(input.ExpressionAttributeValues[valKeyRaw ?? ""]);
+              updated[attr] = Number(updated[attr] ?? 0) + delta;
+            }
+          }
+
           store.set(key, updated);
           return input.ReturnValues === "ALL_NEW" ? { Attributes: updated } : {};
         }

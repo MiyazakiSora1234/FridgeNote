@@ -1,6 +1,6 @@
 import { GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { ddb, isConditionalCheckFailed, TABLE_NAME } from "../lib/dynamo.js";
-import { analysisIdFromImageKey } from "../lib/ids.js";
+import { deterministicIdFromKey } from "../lib/ids.js";
 import { Keys } from "../lib/keys.js";
 import { NotFoundError } from "../lib/errors.js";
 import type { AnalysisResult, AnalysisType, ImageAnalysis } from "../types/index.js";
@@ -21,7 +21,7 @@ export async function createAnalysis(
   imageKey: string,
   type: AnalysisType,
 ): Promise<{ analysisId: string; status: ImageAnalysis["status"]; created: boolean }> {
-  const analysisId = analysisIdFromImageKey(imageKey);
+  const analysisId = deterministicIdFromKey(imageKey);
   const now = new Date().toISOString();
   const ttl = Math.floor(Date.now() / 1000) + ANALYSIS_TTL_DAYS * 24 * 60 * 60;
 
@@ -44,8 +44,6 @@ export async function createAnalysis(
         TableName: TABLE_NAME,
         Item: {
           ...analysisPrimaryKey(userId, analysisId),
-          GSI2PK: Keys.imageKey(imageKey),
-          GSI2SK: Keys.analysis(analysisId),
           ...item,
         },
         ConditionExpression: "attribute_not_exists(PK)",
@@ -79,6 +77,12 @@ export async function getAnalysis(userId: string, analysisId: string): Promise<I
  * 一時的なエラーでSQSが再配信してきた際に正しくリトライできるようにする
  * (厳密にpendingからのみ遷移可とすると、1回目の失敗でfailedへ遷移した後の
  * 再配信がブロックされてしまい、リトライが機能しなくなるため)。
+ *
+ * 例外: terminallyFailed=true(failAnalysisにterminal:trueで記録された、
+ * リトライしても絶対に成功しないと判定済みの失敗)の場合は、statusが"failed"でも
+ * スキップする。通常はAiFatalErrorが例外を再スローしないためSQS再配信自体が
+ * 起きないが、S3がまれに同一イベントを重複配信した場合(仕様上あり得る)に、
+ * 別のSQSメッセージ経由で同じ無駄なBedrock呼び出しを繰り返さないための保険。
  */
 export async function markProcessing(userId: string, analysisId: string): Promise<boolean> {
   try {
@@ -87,7 +91,7 @@ export async function markProcessing(userId: string, analysisId: string): Promis
         TableName: TABLE_NAME,
         Key: analysisPrimaryKey(userId, analysisId),
         UpdateExpression: "SET #status = :processing, updatedAt = :now",
-        ConditionExpression: "#status <> :completed",
+        ConditionExpression: "#status <> :completed AND attribute_not_exists(terminallyFailed)",
         ExpressionAttributeNames: { "#status": "status" },
         ExpressionAttributeValues: {
           ":processing": "processing",
@@ -98,7 +102,7 @@ export async function markProcessing(userId: string, analysisId: string): Promis
     );
     return true;
   } catch (err) {
-    if (isConditionalCheckFailed(err)) return false; // 既に完了済み -> 重複メッセージとしてスキップ
+    if (isConditionalCheckFailed(err)) return false; // 既に完了済み、または再試行しても直らない失敗 -> スキップ
     throw err;
   }
 }
@@ -147,22 +151,30 @@ export async function recordUserFeedback(
   );
 }
 
+/**
+ * @param options.terminal リトライしても絶対に成功しないと判定済みの失敗(AiFatalError)の場合はtrue。
+ *   `terminallyFailed`属性を立てることで、markProcessingが以後この解析を
+ *   (稀なS3イベント重複配信経由であっても)再処理しないようにする。
+ */
 export async function failAnalysis(
   userId: string,
   analysisId: string,
   reason: string,
+  options?: { terminal?: boolean },
 ): Promise<void> {
+  const sets = ["#status = :failed", "errorReason = :reason", "updatedAt = :now"];
+  const values: Record<string, unknown> = { ":failed": "failed", ":reason": reason, ":now": new Date().toISOString() };
+  if (options?.terminal) {
+    sets.push("terminallyFailed = :true");
+    values[":true"] = true;
+  }
   await ddb.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
       Key: analysisPrimaryKey(userId, analysisId),
-      UpdateExpression: "SET #status = :failed, errorReason = :reason, updatedAt = :now",
+      UpdateExpression: `SET ${sets.join(", ")}`,
       ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: {
-        ":failed": "failed",
-        ":reason": reason,
-        ":now": new Date().toISOString(),
-      },
+      ExpressionAttributeValues: values,
     }),
   );
 }

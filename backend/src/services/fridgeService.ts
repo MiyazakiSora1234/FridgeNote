@@ -6,7 +6,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { ddb, isConditionalCheckFailed, TABLE_NAME } from "../lib/dynamo.js";
-import { NotFoundError } from "../lib/errors.js";
+import { ConflictError, NotFoundError } from "../lib/errors.js";
 import { newId } from "../lib/ids.js";
 import { Keys } from "../lib/keys.js";
 import { resolveIngredientId } from "./ingredientMaster.js";
@@ -114,14 +114,26 @@ export async function createFridgeItemsBulk(
 export async function updateFridgeItem(
   userId: string,
   itemId: string,
-  patch: { quantity?: number; unit?: string; expiresAt?: string | null },
+  patch: { quantity?: number; decrementBy?: number; unit?: string; expiresAt?: string | null },
 ): Promise<FridgeItem> {
   const sets: string[] = ["updatedAt = :updatedAt"];
   const values: Record<string, unknown> = { ":updatedAt": new Date().toISOString() };
+  let addClause = "";
+  let conditionExpression = "attribute_exists(PK)";
 
   if (patch.quantity !== undefined) {
     sets.push("quantity = :quantity");
     values[":quantity"] = patch.quantity;
+  }
+  if (patch.decrementBy !== undefined) {
+    // 「現在値を読んでからquantityとして上書き」ではなく、DynamoDBのADD式で
+    // 原子的に減算する。これにより、手動での在庫減算(ConsumeManualScreen)が
+    // 複数端末・複数タブから同時に呼ばれても減算が失われない(lost updateを起こさない)。
+    // ConditionExpressionで在庫不足(結果が負になる)も同時に弾く。
+    addClause = " ADD quantity :negDelta";
+    values[":negDelta"] = -patch.decrementBy;
+    values[":delta"] = patch.decrementBy;
+    conditionExpression += " AND quantity >= :delta";
   }
   if (patch.unit !== undefined) {
     sets.push("unit = :unit");
@@ -138,15 +150,23 @@ export async function updateFridgeItem(
       new UpdateCommand({
         TableName: TABLE_NAME,
         Key: { PK: Keys.user(userId), SK: Keys.item(itemId) },
-        UpdateExpression: `SET ${sets.join(", ")}`,
-        ConditionExpression: "attribute_exists(PK)",
+        UpdateExpression: `SET ${sets.join(", ")}${addClause}`,
+        ConditionExpression: conditionExpression,
         ExpressionAttributeValues: values,
         ReturnValues: "ALL_NEW",
       }),
     );
     return res.Attributes as FridgeItem;
   } catch (err) {
-    if (isConditionalCheckFailed(err)) throw NotFoundError("fridge item not found");
+    if (isConditionalCheckFailed(err)) {
+      // decrementBy指定時は「アイテムが存在しない」か「在庫不足で減算できない」の
+      // いずれか(同時実行で在庫が変わった可能性)。呼び出し元が再取得して
+      // やり直せるよう409で区別する。
+      if (patch.decrementBy !== undefined) {
+        throw ConflictError("insufficient quantity to decrement, or item not found");
+      }
+      throw NotFoundError("fridge item not found");
+    }
     throw err;
   }
 }
@@ -232,6 +252,8 @@ export async function consumeIngredients(
   sourceAnalysisId: string,
   dishName: string,
   consumedIngredients: Array<{ ingredientId: string; quantity: number; unit: string }>,
+  /** AIが候補として提示した食材名(ingredientId -> name)。在庫に無くskipされた食材の表示名に使う。 */
+  candidateNames: Map<string, string> = new Map(),
 ): Promise<ConsumeResult> {
   const claimed = await claimConsumption(userId, sourceAnalysisId, dishName);
   if (!claimed) {
@@ -291,7 +313,9 @@ export async function consumeIngredients(
       result.skipped.push({ ingredientId: outcome.ingredientId, reason: outcome.reason });
       recipeIngredients.push({
         ingredientId: outcome.ingredientId,
-        name: outcome.ingredientId,
+        // 在庫に無い(=FridgeItemを持たない)ため実際の表示名はここでは分からない。
+        // AIが候補として提示した名前があればそれを使い、無ければingredientIdで代替する。
+        name: candidateNames.get(outcome.ingredientId) ?? outcome.ingredientId,
         confidence: 1,
         consumed: false,
       });

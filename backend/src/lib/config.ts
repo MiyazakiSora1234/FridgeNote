@@ -1,3 +1,5 @@
+import { LOW_CONFIDENCE_THRESHOLD } from "../schemas/aiSchemas.js";
+
 /**
  * Lambda環境変数の読み取りを一箇所に集約する。
  * 以前は各serviceが個別に `process.env.X ?? Y` していたため、
@@ -27,11 +29,12 @@ export const config = {
   bedrockModelId: process.env.BEDROCK_MODEL_ID ?? "amazon.nova-lite-v1:0",
 
   /**
-   * AI認識結果の確信度がこの値未満の場合、「認識結果を確認してください」扱いにする閾値。
-   * コードにハードコードせず環境変数で調整できるようにする(実際の認識精度を見ながら
-   * 現場でチューニングできるように)。モバイル側にも同名の閾値があるが、モバイルは
-   * ビルド時定数のため実行時には同期されない -> scripts/check-shared-constants.mjs で
-   * ドリフトを検知する運用(README参照)。
+   * レシート/音声の一括登録チェックリストで、各食材候補を既定でチェック済みにするかどうかの
+   * confidenceしきい値。単品確認(食材/料理写真)でユーザーへ警告を出す閾値
+   * (LOW_CONFIDENCE_THRESHOLD、aiSchemas.ts)と概念的には同じ「AIの確信度が低い」を表すため、
+   * 独立した値をハードコードするのではなくそれをデフォルト値として使う。
+   * 環境変数で上書き可能にしているのは、実際の認識精度を見ながら現場でチューニングできるように
+   * するため(コード変更・再デプロイ不要でinfra/variables.tfのTerraform変数からも調整可能)。
    */
-  aiConfidenceThreshold: Number(process.env.AI_CONFIDENCE_THRESHOLD ?? "0.6"),
+  aiConfidenceThreshold: Number(process.env.AI_CONFIDENCE_THRESHOLD ?? LOW_CONFIDENCE_THRESHOLD),
 };

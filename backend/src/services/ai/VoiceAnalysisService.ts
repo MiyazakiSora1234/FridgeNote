@@ -1,6 +1,6 @@
-import { VOICE_ANALYSIS_JSON_SCHEMA, RawParsedItemsSchema, type RawParsedItems } from "../../schemas/aiSchemas.js";
-import { AiResponseInvalidError } from "./errors.js";
+import { VOICE_ANALYSIS_JSON_SCHEMA, type RawParsedItems } from "../../schemas/aiSchemas.js";
 import { invokeBedrockTool } from "./bedrockToolInvoker.js";
+import { parseRawParsedItemsOrThrow } from "./parseRawParsedItems.js";
 
 /** 音声認識テキストから追加したい食材を抽出するAIサービスの境界。 */
 export interface VoiceAnalysisService {
@@ -21,11 +21,7 @@ export class BedrockVoiceAnalysisService implements VoiceAnalysisService {
       toolName: VOICE_TOOL_NAME,
       toolDescription: "音声から抽出した食材の一覧を報告する",
       jsonSchema: VOICE_ANALYSIS_JSON_SCHEMA,
-      parse: (raw) => {
-        const result = RawParsedItemsSchema.safeParse(raw);
-        if (!result.success) throw new AiResponseInvalidError(result.error.message, raw);
-        return result.data;
-      },
+      parse: parseRawParsedItemsOrThrow,
     });
   }
 }

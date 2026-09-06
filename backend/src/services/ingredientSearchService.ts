@@ -1,5 +1,5 @@
 import { normalizeIngredientName } from "../lib/normalize.js";
-import { loadAllIngredients } from "./ingredientMaster.js";
+import { loadAllIngredients, loadIngredientIndex } from "./ingredientMaster.js";
 
 export interface IngredientCandidate {
   ingredientId: string;
@@ -26,25 +26,32 @@ export class AliasIngredientSearchService implements IngredientSearchService {
     const normalizedQuery = normalizeIngredientName(query);
     if (!normalizedQuery) return [];
 
-    const all = await loadAllIngredients();
+    // 完全一致・Alias完全一致の判定は resolveIngredientId (ingredientMaster.ts) と
+    // 同じ索引(loadIngredientIndex)を再利用する(以前は同じ判定ロジックを
+    // このファイルへ個別に線形スキャンで実装していた)。
+    const [all, index] = await Promise.all([loadAllIngredients(), loadIngredientIndex()]);
     const candidates: IngredientCandidate[] = [];
+    const matchedIds = new Set<string>();
 
+    const exactNameMatch = index.byNormalizedName.get(normalizedQuery);
+    if (exactNameMatch) {
+      candidates.push({ ingredientId: exactNameMatch.id, name: exactNameMatch.name, category: exactNameMatch.category, score: 1 });
+      matchedIds.add(exactNameMatch.id);
+    }
+
+    const exactAliasMatch = index.byNormalizedAlias.get(normalizedQuery);
+    if (exactAliasMatch && !matchedIds.has(exactAliasMatch.id)) {
+      candidates.push({ ingredientId: exactAliasMatch.id, name: exactAliasMatch.name, category: exactAliasMatch.category, score: 0.9 });
+      matchedIds.add(exactAliasMatch.id);
+    }
+
+    // 正規化名同士の部分一致。「鶏もも」で検索して「鶏もも肉」が候補に出てくるようなケース。
+    // 「鶏肉」と「鶏むね肉」のように意味的に別食材のものまで同一視はしない
+    // (完全一致・Alias一致のみを同一食材として扱い、これは"候補"止まり)。
+    // この部分一致だけは索引化できない(任意の部分文字列同士の比較のため)ので全件スキャンする。
     for (const ing of all) {
+      if (matchedIds.has(ing.id)) continue;
       const normalizedName = normalizeIngredientName(ing.name);
-
-      if (normalizedName === normalizedQuery) {
-        candidates.push({ ingredientId: ing.id, name: ing.name, category: ing.category, score: 1 });
-        continue;
-      }
-
-      if (ing.aliases.some((alias) => normalizeIngredientName(alias) === normalizedQuery)) {
-        candidates.push({ ingredientId: ing.id, name: ing.name, category: ing.category, score: 0.9 });
-        continue;
-      }
-
-      // 正規化名同士の部分一致。「鶏もも」で検索して「鶏もも肉」が候補に出てくるようなケース。
-      // 「鶏肉」と「鶏むね肉」のように意味的に別食材のものまで同一視はしない
-      // (完全一致・Alias一致のみを同一食材として扱い、これは"候補"止まり)。
       if (normalizedName.includes(normalizedQuery) || normalizedQuery.includes(normalizedName)) {
         const overlap =
           Math.min(normalizedName.length, normalizedQuery.length) /

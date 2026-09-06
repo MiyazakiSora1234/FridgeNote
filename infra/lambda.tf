@@ -61,13 +61,18 @@ resource "aws_lambda_function" "worker" {
   timeout     = 60  # SQS可視性タイムアウト(90秒)より短く設定
 
   environment {
-    variables = {
-      TABLE_NAME              = aws_dynamodb_table.main.name
-      IMAGES_BUCKET_NAME      = aws_s3_bucket.images.bucket
-      BEDROCK_MODEL_ID        = var.bedrock_model_id
-      AI_CONFIDENCE_THRESHOLD = tostring(var.ai_confidence_threshold)
-      LOG_LEVEL               = var.log_level
-    }
+    # ai_confidence_thresholdが未指定(null)の場合はAI_CONFIDENCE_THRESHOLD自体を環境変数に
+    # 含めない -> backend/src/lib/config.tsのコード側デフォルト(LOW_CONFIDENCE_THRESHOLD)が
+    # そのまま使われる(variables.tfのai_confidence_threshold説明を参照)。
+    variables = merge(
+      {
+        TABLE_NAME         = aws_dynamodb_table.main.name
+        IMAGES_BUCKET_NAME = aws_s3_bucket.images.bucket
+        BEDROCK_MODEL_ID   = var.bedrock_model_id
+        LOG_LEVEL          = var.log_level
+      },
+      var.ai_confidence_threshold != null ? { AI_CONFIDENCE_THRESHOLD = tostring(var.ai_confidence_threshold) } : {}
+    )
   }
 
   depends_on = [aws_cloudwatch_log_group.worker_lambda]

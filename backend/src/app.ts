@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import type { AppEnv } from "./middleware/auth.js";
 import { requireAuth } from "./middleware/auth.js";
 import { ApiError } from "./lib/errors.js";
@@ -12,7 +11,11 @@ import { ingredientsRoute } from "./routes/ingredients.js";
 
 export const app = new Hono<AppEnv>();
 
-app.use("*", cors());
+// CORSはAPI Gateway HTTP API側のcors_configuration(infra/apigateway.tf, var.cors_allowed_origins)
+// だけで完結させる。HTTP APIのCORS設定はプリフライト(OPTIONS)をAPI Gateway層で処理し、
+// 実レスポンスにもAPI Gateway側でヘッダーを付与するため、ここでHonoのcors()ミドルウェアを
+// 重ねて適用すると許可オリジンの設定元が2箇所に分散し、ズレたりヘッダーが重複したりする
+// (以前はここにも app.use("*", cors()) があり、常時 "*" を返すデフォルト設定のままだった)。
 
 app.onError((err, c) => {
   if (err instanceof ApiError) {

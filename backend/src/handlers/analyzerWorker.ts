@@ -53,6 +53,15 @@ const voiceAnalysisService = new BedrockVoiceAnalysisService();
  * SQSのバッチ処理ではPartial Batch Response(batchItemFailures)を使い、
  * 1メッセージの失敗が他メッセージの再処理を巻き込まないようにする。
  */
+/**
+ * infra/sqs.tf の analysis_queue.redrive_policy.maxReceiveCount と一致させること。
+ * SQSの `ApproximateReceiveCount` がこの値に達した(=これが最後の配信試行)場合、
+ * 「クライアントのPOST /v1/analyses(または/v1/voice/transcriptions)呼び出しが
+ * 結局来なかった」レコード未作成状態を、もう再試行しても仕方ないと判断する材料に使う
+ * (processImageRecord/processAudioRecordのコメント参照)。
+ */
+const SQS_MAX_RECEIVE_COUNT = 3;
+
 export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
   const batchItemFailures: SQSBatchItemFailure[] = [];
   logger.info("analyzer_worker_batch_started", { recordCount: event.Records.length });
@@ -76,22 +85,23 @@ export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
 
 async function processRecord(record: SQSRecord, log: Logger): Promise<void> {
   const s3Event = JSON.parse(record.body) as S3Event;
+  const receiveCount = Number(record.attributes?.ApproximateReceiveCount ?? "1");
   for (const s3Record of s3Event.Records ?? []) {
-    await processS3Record(s3Record, log);
+    await processS3Record(s3Record, receiveCount, log);
   }
 }
 
-async function processS3Record(s3Record: S3EventRecord, log: Logger): Promise<void> {
+async function processS3Record(s3Record: S3EventRecord, receiveCount: number, log: Logger): Promise<void> {
   const key = decodeURIComponent(s3Record.s3.object.key.replace(/\+/g, " "));
 
   if (key.includes("/audio/")) {
-    await processAudioRecord(key, log);
+    await processAudioRecord(key, receiveCount, log);
   } else {
-    await processImageRecord(key, log);
+    await processImageRecord(key, receiveCount, log);
   }
 }
 
-async function processImageRecord(imageKey: string, parentLog: Logger): Promise<void> {
+async function processImageRecord(imageKey: string, receiveCount: number, parentLog: Logger): Promise<void> {
   const userId = userIdFromImageKey(imageKey);
   if (!userId) {
     parentLog.error("image_key_userid_extraction_failed", { imageKey });
@@ -100,7 +110,8 @@ async function processImageRecord(imageKey: string, parentLog: Logger): Promise<
 
   const analysisId = deterministicIdFromKey(imageKey);
   const log = parentLog.child({ analysisId, userId, imageKey });
-  const analysis = await getImageAnalysisRecordOrThrow(userId, analysisId);
+  const analysis = await getImageAnalysisRecordOrGiveUp(userId, analysisId, receiveCount, log);
+  if (!analysis) return; // レコードが最終的に見つからなかった(クライアントが途中で諦めた等) -> 諦める
 
   const started = await markProcessing(userId, analysisId);
   if (!started) {
@@ -115,12 +126,12 @@ async function processImageRecord(imageKey: string, parentLog: Logger): Promise<
       await completeAnalysis(userId, analysisId, result);
       log.info("image_analysis_completed", { type: analysis.type });
     },
-    (reason) => failAnalysis(userId, analysisId, reason),
+    (reason, options) => failAnalysis(userId, analysisId, reason, options),
     log,
   );
 }
 
-async function processAudioRecord(audioKey: string, parentLog: Logger): Promise<void> {
+async function processAudioRecord(audioKey: string, receiveCount: number, parentLog: Logger): Promise<void> {
   const userId = userIdFromAudioKey(audioKey);
   if (!userId) {
     parentLog.error("audio_key_userid_extraction_failed", { audioKey });
@@ -129,7 +140,8 @@ async function processAudioRecord(audioKey: string, parentLog: Logger): Promise<
 
   const analysisId = deterministicIdFromKey(audioKey);
   const log = parentLog.child({ analysisId, userId, audioKey });
-  const analysis = await getVoiceAnalysisRecordOrThrow(userId, analysisId);
+  const analysis = await getVoiceAnalysisRecordOrGiveUp(userId, analysisId, receiveCount, log);
+  if (!analysis) return;
 
   const started = await markVoiceProcessing(userId, analysisId);
   if (!started) {
@@ -144,7 +156,7 @@ async function processAudioRecord(audioKey: string, parentLog: Logger): Promise<
       await completeVoiceAnalysis(userId, analysisId, transcript, items);
       log.info("voice_analysis_completed", { itemCount: items.length, transcriptLength: transcript.length });
     },
-    (reason) => failVoiceAnalysis(userId, analysisId, reason),
+    (reason, options) => failVoiceAnalysis(userId, analysisId, reason, options),
     log,
   );
 }
@@ -153,26 +165,48 @@ async function processAudioRecord(audioKey: string, parentLog: Logger): Promise<
  * クライアントの POST /v1/analyses (または /v1/voice/transcriptions) 呼び出しが
  * S3イベントより遅れて到着するレースコンディションに対応するため、レコードが
  * 見つからない場合はエラーをthrowしてSQSに再配信させる(Visibility Timeout経過後)。
- * それでも一定回数見つからなければDLQへ送られ、運用者が気づけるようにする。
+ *
+ * ただし、それでも最後の配信試行(ApproximateReceiveCount >= SQS_MAX_RECEIVE_COUNT)まで
+ * 見つからない場合は、もはや「クライアントの呼び出しが少し遅れているだけ」ではなく、
+ * ユーザーがアップロード後にアプリを閉じた・通信が切れた等で結局呼ばれなかった可能性が高いと
+ * 判断し、例外を投げずnullを返す(=このS3イベントは諦めて正常終了として扱う)。
+ * ここでthrowし続けてDLQへ送ってしまうと、実際には何も問題が起きていないのに
+ * DLQ滞留アラームが発報され続け、本当の異常を見逃す原因(アラート疲れ)になるため。
  */
-async function getImageAnalysisRecordOrThrow(userId: string, analysisId: string): Promise<ImageAnalysis> {
+async function getImageAnalysisRecordOrGiveUp(
+  userId: string,
+  analysisId: string,
+  receiveCount: number,
+  log: Logger,
+): Promise<ImageAnalysis | null> {
   const res = await ddb.send(
     new GetCommand({ TableName: TABLE_NAME, Key: { PK: Keys.user(userId), SK: Keys.analysis(analysisId) } }),
   );
-  if (!res.Item) {
-    throw new Error(`analysis record not yet created for analysisId=${analysisId}, retrying`);
+  if (res.Item) return res.Item as ImageAnalysis;
+
+  if (receiveCount >= SQS_MAX_RECEIVE_COUNT) {
+    log.warn("image_analysis_record_never_created_giving_up", { receiveCount });
+    return null;
   }
-  return res.Item as ImageAnalysis;
+  throw new Error(`analysis record not yet created for analysisId=${analysisId}, retrying`);
 }
 
-async function getVoiceAnalysisRecordOrThrow(userId: string, analysisId: string): Promise<VoiceAnalysis> {
+async function getVoiceAnalysisRecordOrGiveUp(
+  userId: string,
+  analysisId: string,
+  receiveCount: number,
+  log: Logger,
+): Promise<VoiceAnalysis | null> {
   const res = await ddb.send(
     new GetCommand({ TableName: TABLE_NAME, Key: { PK: Keys.user(userId), SK: Keys.voiceAnalysis(analysisId) } }),
   );
-  if (!res.Item) {
-    throw new Error(`voice analysis record not yet created for analysisId=${analysisId}, retrying`);
+  if (res.Item) return res.Item as VoiceAnalysis;
+
+  if (receiveCount >= SQS_MAX_RECEIVE_COUNT) {
+    log.warn("voice_analysis_record_never_created_giving_up", { receiveCount });
+    return null;
   }
-  return res.Item as VoiceAnalysis;
+  throw new Error(`voice analysis record not yet created for analysisId=${analysisId}, retrying`);
 }
 
 async function analyzeFood(imageKey: string): Promise<FoodAnalysisResult> {
@@ -260,7 +294,7 @@ async function analyzeVoice(audioKey: string): Promise<{ transcript: string; ite
  */
 async function runWithFailureHandling(
   work: () => Promise<void>,
-  fail: (reason: string) => Promise<void>,
+  fail: (reason: string, options?: { terminal?: boolean }) => Promise<void>,
   log: Logger,
 ): Promise<void> {
   try {
@@ -268,13 +302,13 @@ async function runWithFailureHandling(
   } catch (err) {
     if (err instanceof AiResponseInvalidError) {
       log.error("ai_response_invalid", { err, raw: err.raw });
-      await fail("ai_response_invalid");
+      await fail("ai_response_invalid", { terminal: true });
       return;
     }
     if (err instanceof AiFatalError) {
       log.error("ai_fatal_error_not_retrying", { err, reason: err.reason });
-      await fail(err.reason);
-      return; // 再スローしない = このSQSメッセージは「処理済み」として扱われ、再配信されない
+      await fail(err.reason, { terminal: true }); // 再スローしない = このSQSメッセージは「処理済み」として扱われ、再配信されない
+      return;
     }
     log.warn("analysis_failed_will_retry_via_sqs", { err });
     await fail("processing_error").catch((failErr) => log.error("failed_to_record_failure_status", { err: failErr }));

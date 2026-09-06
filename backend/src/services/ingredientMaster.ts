@@ -1,6 +1,6 @@
 import { GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
-import { ddb, TABLE_NAME } from "../lib/dynamo.js";
-import { newId } from "../lib/ids.js";
+import { ddb, isConditionalCheckFailed, TABLE_NAME } from "../lib/dynamo.js";
+import { deterministicIdFromKey } from "../lib/ids.js";
 import { Keys } from "../lib/keys.js";
 import { normalizeIngredientName } from "../lib/normalize.js";
 import type { Ingredient } from "../types/index.js";
@@ -49,6 +49,35 @@ export async function loadAllIngredients(): Promise<Ingredient[]> {
   return items;
 }
 
+export interface IngredientIndex {
+  byNormalizedName: Map<string, Ingredient>;
+  byNormalizedAlias: Map<string, Ingredient>;
+}
+
+/**
+ * 食材名の完全一致・別名(alias)完全一致判定を、resolveIngredientId(このファイル)と
+ * AliasIngredientSearchService(ingredientSearchService.ts)の両方が個別に線形スキャンで
+ * 実装していたのを1つに統合したもの。Mapによる索引にすることで、この2つの判定が
+ * O(1)になる(件数が増えてきた場合の将来のスケーラビリティにも寄与する)。
+ *
+ * 同じ正規化名/別名を複数の食材が偶然持つ場合(データ品質上望ましくないが起こりうる)、
+ * 先に読み込んだ方を採用する(以前の線形スキャンでも配列の先頭側が優先されていた挙動と同じ)。
+ */
+export async function loadIngredientIndex(): Promise<IngredientIndex> {
+  const all = await loadAllIngredients();
+  const byNormalizedName = new Map<string, Ingredient>();
+  const byNormalizedAlias = new Map<string, Ingredient>();
+  for (const ing of all) {
+    const normalizedName = normalizeIngredientName(ing.name);
+    if (!byNormalizedName.has(normalizedName)) byNormalizedName.set(normalizedName, ing);
+    for (const alias of ing.aliases) {
+      const normalizedAlias = normalizeIngredientName(alias);
+      if (!byNormalizedAlias.has(normalizedAlias)) byNormalizedAlias.set(normalizedAlias, ing);
+    }
+  }
+  return { byNormalizedName, byNormalizedAlias };
+}
+
 /**
  * AIやユーザー入力から渡された食材名(表記ゆれあり)を正規化されたIngredientIdへ解決する。
  * 既存のマスターに一致するものがなければ新規作成する。
@@ -58,19 +87,17 @@ export async function resolveIngredientId(
   categoryHint = "other",
 ): Promise<{ ingredientId: string; name: string; category: string }> {
   const normalized = normalizeIngredientName(rawName);
-  const all = await loadAllIngredients();
+  const index = await loadIngredientIndex();
+  const match = index.byNormalizedName.get(normalized) ?? index.byNormalizedAlias.get(normalized);
+  if (match) return { ingredientId: match.id, name: match.name, category: match.category };
 
-  for (const ing of all) {
-    if (normalizeIngredientName(ing.name) === normalized) {
-      return { ingredientId: ing.id, name: ing.name, category: ing.category };
-    }
-    if (ing.aliases.some((a) => normalizeIngredientName(a) === normalized)) {
-      return { ingredientId: ing.id, name: ing.name, category: ing.category };
-    }
-  }
-
-  // 未知の食材名 -> マスターへ新規登録
-  const id = `ingredient_${newId()}`;
+  // 未知の食材名 -> マスターへ新規登録。
+  // idは正規化名から決定論的に導出する(analysisId等と同じ考え方)。こうすることで、
+  // レシート/音声の一括登録のように同じ未登録食材名を複数リクエストが同時に処理した場合でも
+  // 全員が同じidに収束し、下のConditionExpressionが後発リクエストを弾いてくれるため、
+  // 同名の食材マスターが重複作成されることがない(以前はULIDで採番しており、
+  // 並行実行時に同名で複数レコードができてしまう競合状態があった)。
+  const id = `ingredient_${deterministicIdFromKey(normalized)}`;
   const now = new Date().toISOString();
   const item: Ingredient = {
     entityType: "Ingredient",
@@ -80,22 +107,30 @@ export async function resolveIngredientId(
     aliases: [rawName],
     createdAt: now,
   };
-  await ddb.send(
-    new PutCommand({
-      TableName: TABLE_NAME,
-      Item: {
-        PK: Keys.ingredient(id),
-        SK: Keys.ingredientMetadata(),
-        GSI3PK: Keys.ingredientMasterPartition(),
-        GSI3SK: Keys.ingredientName(normalized),
-        ...item,
-      },
-      ConditionExpression: "attribute_not_exists(PK)",
-    }),
-  );
-  // TTL切れを待たず、同一ウォームコンテナ内の後続呼び出しがすぐ見つけられるようにする。
-  cache?.items.push(item);
-  return { ingredientId: id, name: rawName, category: categoryHint };
+  try {
+    await ddb.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: {
+          PK: Keys.ingredient(id),
+          SK: Keys.ingredientMetadata(),
+          GSI3PK: Keys.ingredientMasterPartition(),
+          GSI3SK: Keys.ingredientName(normalized),
+          ...item,
+        },
+        ConditionExpression: "attribute_not_exists(PK)",
+      }),
+    );
+    // TTL切れを待たず、同一ウォームコンテナ内の後続呼び出しがすぐ見つけられるようにする。
+    cache?.items.push(item);
+    return { ingredientId: id, name: rawName, category: categoryHint };
+  } catch (err) {
+    if (!isConditionalCheckFailed(err)) throw err;
+    // 同時に別のリクエストが同じ正規化名の食材を先に作成済み -> それを使う(重複作成の回避)。
+    const existing = await getIngredientById(id);
+    if (existing) return { ingredientId: existing.id, name: existing.name, category: existing.category };
+    throw err;
+  }
 }
 
 export async function getIngredientById(ingredientId: string): Promise<Ingredient | null> {

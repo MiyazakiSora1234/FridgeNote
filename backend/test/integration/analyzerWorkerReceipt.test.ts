@@ -156,9 +156,35 @@ describe("analyzerWorker: receipt analysis", () => {
     });
 
     expect(response.batchItemFailures).toEqual([]); // SQS再配信させない
-    const stored = fakeDdb.store.get(`USER#${userId}#ANALYSIS#${analysisId}`);
+    const stored = fakeDdb.store.get(`USER#${userId}#ANALYSIS#${analysisId}`) as any;
     expect(stored?.status).toBe("failed");
     expect(stored?.errorReason).toBe("bedrock_quota_exceeded");
+    expect(stored?.terminallyFailed).toBe(true);
+  });
+
+  it("does not re-invoke Bedrock even if S3 redelivers the same event after a terminal (fatal) failure", async () => {
+    // 通常はAiFatalErrorが例外を再スローしないためSQS自体は再配信してこないが、
+    // S3がまれに同一のObjectCreatedイベントを重複配信するケース(仕様上あり得る)を模擬する:
+    // 全く別のSQSメッセージとして同じimageKeyのイベントがもう一度届いても、
+    // terminallyFailedなジョブは再処理されないことを確認する。
+    mockInvokeBedrockTool.mockRejectedValueOnce(
+      new AiFatalError("Bedrock invocation failed fatally (bedrock_quota_exceeded)", "bedrock_quota_exceeded"),
+    );
+
+    const userId = "user-1";
+    const imageKey = `users/${userId}/uploads/receipt6.jpg`;
+    seedPendingReceipt(userId, imageKey);
+
+    await handler({ Records: [s3EventSqsRecord("fridgenote-images", imageKey, "msg-fatal-1")] });
+    expect(mockInvokeBedrockTool).toHaveBeenCalledTimes(1);
+
+    mockInvokeBedrockTool.mockClear();
+    const response = await handler({
+      Records: [s3EventSqsRecord("fridgenote-images", imageKey, "msg-fatal-2-duplicate-s3-event")],
+    });
+
+    expect(response.batchItemFailures).toEqual([]);
+    expect(mockInvokeBedrockTool).not.toHaveBeenCalled();
   });
 
   it("reports the SQS message as a batch item failure (for retry) when OCR fails transiently", async () => {

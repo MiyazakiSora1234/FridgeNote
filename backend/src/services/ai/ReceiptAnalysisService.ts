@@ -1,6 +1,6 @@
-import { RECEIPT_ANALYSIS_JSON_SCHEMA, RawParsedItemsSchema, type RawParsedItems } from "../../schemas/aiSchemas.js";
-import { AiResponseInvalidError } from "./errors.js";
+import { RECEIPT_ANALYSIS_JSON_SCHEMA, type RawParsedItems } from "../../schemas/aiSchemas.js";
 import { invokeBedrockTool } from "./bedrockToolInvoker.js";
+import { parseRawParsedItemsOrThrow } from "./parseRawParsedItems.js";
 
 /** OCRテキストから購入した食材候補を抽出するAIサービスの境界。 */
 export interface ReceiptAnalysisService {
@@ -22,11 +22,7 @@ export class BedrockReceiptAnalysisService implements ReceiptAnalysisService {
       toolName: RECEIPT_TOOL_NAME,
       toolDescription: "レシートから抽出した食材の一覧を報告する",
       jsonSchema: RECEIPT_ANALYSIS_JSON_SCHEMA,
-      parse: (raw) => {
-        const result = RawParsedItemsSchema.safeParse(raw);
-        if (!result.success) throw new AiResponseInvalidError(result.error.message, raw);
-        return result.data;
-      },
+      parse: parseRawParsedItemsOrThrow,
     });
   }
 }

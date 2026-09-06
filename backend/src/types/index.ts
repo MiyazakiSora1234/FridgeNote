@@ -72,6 +72,8 @@ export interface ImageAnalysis {
   status: AnalysisStatus;
   result: AnalysisResult | null;
   errorReason?: string;
+  /** trueの場合、リトライしても絶対に成功しないと判定済みの失敗(AiFatalError)。markProcessingが再処理をブロックする。 */
+  terminallyFailed?: boolean;
   userFeedback?: unknown;
   createdAt: string;
   updatedAt: string;
@@ -92,6 +94,7 @@ export interface VoiceAnalysis {
   transcript?: string;
   result: { items: ParsedIngredientItem[] } | null;
   errorReason?: string;
+  terminallyFailed?: boolean;
   userFeedback?: unknown;
   createdAt: string;
   updatedAt: string;

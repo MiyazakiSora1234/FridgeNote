@@ -64,7 +64,11 @@ export async function getVoiceAnalysis(userId: string, analysisId: string): Prom
   return res.Item as VoiceAnalysis;
 }
 
-/** analysisService.markProcessing と同じ考え方(status=completedの場合のみスキップ)。 */
+/**
+ * analysisService.markProcessing と同じ考え方(status=completedの場合のみスキップ)。
+ * terminallyFailed(AiFatalErrorによる恒久的失敗)の場合も同様にスキップする
+ * (analysisService.markProcessingのコメント参照)。
+ */
 export async function markVoiceProcessing(userId: string, analysisId: string): Promise<boolean> {
   try {
     await ddb.send(
@@ -72,7 +76,7 @@ export async function markVoiceProcessing(userId: string, analysisId: string): P
         TableName: TABLE_NAME,
         Key: voicePrimaryKey(userId, analysisId),
         UpdateExpression: "SET #status = :processing, updatedAt = :now",
-        ConditionExpression: "#status <> :completed",
+        ConditionExpression: "#status <> :completed AND attribute_not_exists(terminallyFailed)",
         ExpressionAttributeNames: { "#status": "status" },
         ExpressionAttributeValues: {
           ":processing": "processing",
@@ -110,14 +114,26 @@ export async function completeVoiceAnalysis(
   );
 }
 
-export async function failVoiceAnalysis(userId: string, analysisId: string, reason: string): Promise<void> {
+/** @param options.terminal analysisService.failAnalysisと同じ意味(AiFatalErrorによる恒久的失敗)。 */
+export async function failVoiceAnalysis(
+  userId: string,
+  analysisId: string,
+  reason: string,
+  options?: { terminal?: boolean },
+): Promise<void> {
+  const sets = ["#status = :failed", "errorReason = :reason", "updatedAt = :now"];
+  const values: Record<string, unknown> = { ":failed": "failed", ":reason": reason, ":now": new Date().toISOString() };
+  if (options?.terminal) {
+    sets.push("terminallyFailed = :true");
+    values[":true"] = true;
+  }
   await ddb.send(
     new UpdateCommand({
       TableName: TABLE_NAME,
       Key: voicePrimaryKey(userId, analysisId),
-      UpdateExpression: "SET #status = :failed, errorReason = :reason, updatedAt = :now",
+      UpdateExpression: `SET ${sets.join(", ")}`,
       ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: { ":failed": "failed", ":reason": reason, ":now": new Date().toISOString() },
+      ExpressionAttributeValues: values,
     }),
   );
 }

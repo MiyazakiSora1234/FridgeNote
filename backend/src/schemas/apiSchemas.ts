@@ -38,11 +38,22 @@ export const BulkCreateFridgeItemsRequestSchema = z.object({
   items: z.array(CreateFridgeItemRequestSchema.omit({ sourceAnalysisId: true })).min(1).max(50),
 });
 
-export const UpdateFridgeItemRequestSchema = z.object({
-  quantity: z.number().finite().nonnegative().max(100000).optional(),
-  unit: z.string().min(1).max(20).optional(),
-  expiresAt: DateOnlyStringSchema.nullable().optional(),
-});
+export const UpdateFridgeItemRequestSchema = z
+  .object({
+    quantity: z.number().finite().nonnegative().max(100000).optional(),
+    /**
+     * 「現在値を読んでから引いた値をquantityとして上書き」だとクライアント側の計算になり、
+     * 2つのリクエストが同時に来ると片方の減算が失われる(lost update)。
+     * decrementByはサーバー側でDynamoDBのADD式による原子的な減算として処理するための
+     * 専用フィールドで、quantityとは併用しない(手動での在庫減算画面が使う)。
+     */
+    decrementBy: z.number().finite().positive().max(100000).optional(),
+    unit: z.string().min(1).max(20).optional(),
+    expiresAt: DateOnlyStringSchema.nullable().optional(),
+  })
+  .refine((data) => !(data.quantity !== undefined && data.decrementBy !== undefined), {
+    message: "quantity and decrementBy cannot both be specified",
+  });
 
 export const ConsumeRequestSchema = z.object({
   sourceAnalysisId: z.string().min(1).max(64),

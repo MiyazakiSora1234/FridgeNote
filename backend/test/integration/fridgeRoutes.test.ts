@@ -128,6 +128,53 @@ describe("fridge routes", () => {
     expect(first.ingredientId).toBe(second.ingredientId);
   });
 
+  it("decrementBy atomically subtracts quantity without a read-then-overwrite race (手動で減らす)", async () => {
+    const env = authEnv("user-1");
+    const created = await json(
+      await call("/v1/fridge/items", jsonRequest({ ingredientName: "卵", quantity: 10, unit: "個" }), env),
+    );
+
+    // 2つの減算リクエストを並列で送る。クライアント側で「現在値-入力値」を計算する
+    // 方式だと片方の減算が失われうるが、decrementByはサーバー側のADD式で
+    // 原子的に処理されるため、両方とも正しく反映されるはず。
+    const [res1, res2] = await Promise.all([
+      call(`/v1/fridge/items/${created.itemId}`, jsonRequest({ decrementBy: 3 }, "PATCH"), env),
+      call(`/v1/fridge/items/${created.itemId}`, jsonRequest({ decrementBy: 2 }, "PATCH"), env),
+    ]);
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+
+    const final = await json(await call(`/v1/fridge/items`, {}, env));
+    expect(final.items[0].quantity).toBe(5); // 10 - 3 - 2
+  });
+
+  it("rejects decrementBy when it would take the quantity below zero (409, stock may have changed)", async () => {
+    const env = authEnv("user-1");
+    const created = await json(
+      await call("/v1/fridge/items", jsonRequest({ ingredientName: "牛乳", quantity: 1, unit: "本" }), env),
+    );
+
+    const res = await call(`/v1/fridge/items/${created.itemId}`, jsonRequest({ decrementBy: 5 }, "PATCH"), env);
+    expect(res.status).toBe(409);
+
+    const unchanged = await json(await call(`/v1/fridge/items`, {}, env));
+    expect(unchanged.items[0].quantity).toBe(1); // 変更されていない
+  });
+
+  it("rejects specifying both quantity and decrementBy in the same request", async () => {
+    const env = authEnv("user-1");
+    const created = await json(
+      await call("/v1/fridge/items", jsonRequest({ ingredientName: "にんじん", quantity: 2, unit: "本" }), env),
+    );
+
+    const res = await call(
+      `/v1/fridge/items/${created.itemId}`,
+      jsonRequest({ quantity: 1, decrementBy: 1 }, "PATCH"),
+      env,
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("rejects invalid request bodies with 400", async () => {
     const env = authEnv("user-1");
     const res = await call(

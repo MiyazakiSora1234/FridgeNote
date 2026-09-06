@@ -132,11 +132,15 @@ fridgeRoute.post("/consume", async (c) => {
   }
 
   const dishName = analysis.result.dish;
+  // AIが候補として提示した名前をここで拾っておき、在庫に無くskipされた食材の
+  // 表示名として使う(consumeIngredients単体ではingredientIdしか持たないため)。
+  const candidateNames = new Map(analysis.result.ingredients.map((i) => [i.ingredientId, i.name]));
   const result = await consumeIngredients(
     userId,
     body.data.sourceAnalysisId,
     dishName,
     body.data.consumedIngredients,
+    candidateNames,
   );
 
   // AIが候補として出した食材のうち、ユーザーが実際に「使った」と確定したものを記録する

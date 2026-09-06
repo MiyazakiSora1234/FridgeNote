@@ -23,14 +23,6 @@ resource "aws_dynamodb_table" "main" {
     type = "S"
   }
   attribute {
-    name = "GSI2PK"
-    type = "S"
-  }
-  attribute {
-    name = "GSI2SK"
-    type = "S"
-  }
-  attribute {
     name = "GSI3PK"
     type = "S"
   }
@@ -44,14 +36,6 @@ resource "aws_dynamodb_table" "main" {
     name            = "GSI1"
     hash_key        = "GSI1PK"
     range_key       = "GSI1SK"
-    projection_type = "ALL"
-  }
-
-  # imageKeyからImageAnalysisを引く(重複処理検知・デバッグ用)
-  global_secondary_index {
-    name            = "GSI2"
-    hash_key        = "GSI2PK"
-    range_key       = "GSI2SK"
     projection_type = "ALL"
   }
 

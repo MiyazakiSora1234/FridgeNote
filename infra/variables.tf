@@ -57,9 +57,9 @@ variable "github_actions_environment" {
 }
 
 variable "ai_confidence_threshold" {
-  description = "レシート/音声解析でAIが返す各食材候補のconfidenceがこの値未満の場合、一括追加チェックリストで既定非選択とする閾値。"
+  description = "レシート/音声解析でAIが返す各食材候補のconfidenceがこの値未満の場合、一括追加チェックリストで既定非選択とする閾値。未指定(null)の場合はAI_CONFIDENCE_THRESHOLD環境変数自体を設定せず、backend/src/lib/config.tsのコード側デフォルト(LOW_CONFIDENCE_THRESHOLD、aiSchemas.ts)をそのまま使う。ここにも同じ数値をハードコードすると、片方だけ変更されて値がズレる(このTerraform変数が常にコードのデフォルトを上書きしてしまう)ため。"
   type        = number
-  default     = 0.6
+  default     = null
 }
 
 variable "cloudtrail_log_retention_days" {
