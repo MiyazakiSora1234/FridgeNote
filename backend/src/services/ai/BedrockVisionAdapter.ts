@@ -20,8 +20,24 @@ const client = new BedrockRuntimeClient({});
 // コスト最優先のためデフォルトは軽量マルチモーダルモデル(Amazon Nova Lite)。
 // 環境変数(BEDROCK_MODEL_ID)で上書き可能にし、モデル差し替えをコード変更なしで行えるようにする。
 const MODEL_ID = config.bedrockModelId;
-const MAX_RETRIES = 3;
-const INVOKE_TIMEOUT_MS = 25_000;
+
+// テストからガードレール(下のtest/unit/bedrockTiming.test.ts)としてimportできるようexportする。
+export const MAX_RETRIES = 3;
+export const INVOKE_TIMEOUT_MS = 15_000;
+
+/**
+ * リトライ全体(Bedrock呼び出し部分だけ)にかけてよい時間の上限。
+ * Analyzer WorkerのLambdaタイムアウトは60秒(infra/lambda.tf の
+ * aws_lambda_function.worker.timeout)なので、S3からの画像取得・
+ * 食材マスター解決・DynamoDB書き込みの分の余裕(約15秒)を差し引いた45秒とする。
+ * これを設けないと、MAX_RETRIES×INVOKE_TIMEOUT_MSの理論上の最悪値
+ * (3×25秒=75秒、旧設定)がLambda自体のタイムアウトを超えてしまい、
+ * failAnalysis()すら呼ばれないまま強制終了する事故につながっていた。
+ */
+export const OVERALL_BUDGET_MS = 45_000;
+
+/** infra/lambda.tf の aws_lambda_function.worker.timeout と一致させること。 */
+export const WORKER_LAMBDA_TIMEOUT_MS = 60_000;
 
 /**
  * リクエスト内容そのものが原因のエラー(権限不足・入力不正・モデル/リソース不在)は
@@ -74,8 +90,16 @@ async function invokeWithTool<T>(params: {
     },
   ];
 
+  const overallStart = Date.now();
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    if (Date.now() - overallStart >= OVERALL_BUDGET_MS) {
+      // 次の試行を始めると全体の時間予算を超える(≒呼び出し元のLambdaタイムアウトに
+      // 近づきすぎる)ため、新たな試行は始めずここで打ち切る。
+      throw new AiInvocationError(
+        `Bedrock invocation aborted after ${attempt - 1} attempt(s): exceeded overall time budget of ${OVERALL_BUDGET_MS}ms`,
+      );
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), INVOKE_TIMEOUT_MS);
     try {

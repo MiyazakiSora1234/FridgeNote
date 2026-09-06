@@ -121,6 +121,8 @@ Request:
 }
 ```
 挙動:
+- `sourceAnalysisId` が指す解析が `status=completed` かつ `type=dish` でない場合は400。
+- `consumedIngredients` の各 `ingredientId` は、その解析結果(`result.ingredients`)にAIが実際に候補として挙げたものだけを許可する。候補外のIDが1つでも含まれていれば400(「使用食材候補の確認」という機能の意図から外れた消費を防ぐガード)。
 - 各 `ingredientId` について該当ユーザーの `FridgeItem` を検索し、数量を減算。
 - 減算後の数量が0以下になった場合は `quantity=0` として保持(削除はしない。表示上は在庫切れとして扱う運用とし、ユーザーが明示的にDELETEするまで消さない)。
 - 対応する在庫が存在しない場合はスキップし、レスポンスの `skipped` に含める(エラーにはしない)。
@@ -135,5 +137,11 @@ Response 200:
 ```
 
 ## 冪等性について
-`POST /v1/analyses` と `POST /v1/fridge/consume` は `Idempotency-Key` ヘッダ(クライアント生成UUID)を受け付け、
-同一キーでの再送信は最初の結果をそのまま返す(DynamoDB条件付き書き込みで実現)。
+`POST /v1/analyses` は `imageKey` から決定論的に `analysisId` を導出するため、
+再送信しても既存レコードがそのまま返るだけで自然に冪等(クライアント側でIdempotency-Keyを
+発行する必要はない)。
+
+`POST /v1/fridge/consume` は `sourceAnalysisId` 自体が冪等性キーを兼ねる。
+DynamoDBの条件付き書き込みで「このsourceAnalysisIdに対する消費」を最初の1回だけ受け付け、
+同じ `sourceAnalysisId` での2回目以降の呼び出しは在庫を一切変更せず、
+1回目の処理結果をそのまま返す(二重タップやネットワーク再送で在庫が二重に減算されることはない)。

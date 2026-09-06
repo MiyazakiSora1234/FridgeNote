@@ -134,4 +134,121 @@ describe("POST /v1/fridge/consume", () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it("is idempotent: calling consume twice for the same analysis only decrements inventory once", async () => {
+    const userId = "user-1";
+    const env = authEnv(userId);
+
+    fakeDdb.store.set(`USER#${userId}#ANALYSIS#a1`, {
+      PK: `USER#${userId}`,
+      SK: "ANALYSIS#a1",
+      entityType: "ImageAnalysis",
+      userId,
+      analysisId: "a1",
+      imageKey: `users/${userId}/uploads/dish.jpg`,
+      type: "dish",
+      status: "completed",
+      result: {
+        kind: "dish",
+        dish: "親子丼",
+        ingredients: [{ name: "鶏肉", ingredientId: "ing_chicken", confidence: 0.94 }],
+      },
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    });
+    fakeDdb.store.set(`USER#${userId}#ITEM#item_chicken`, {
+      PK: `USER#${userId}`,
+      SK: "ITEM#item_chicken",
+      entityType: "FridgeItem",
+      userId,
+      itemId: "item_chicken",
+      ingredientId: "ing_chicken",
+      name: "鶏肉",
+      category: "meat",
+      quantity: 300,
+      unit: "g",
+      expiresAt: null,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+      source: "manual",
+    });
+
+    const requestBody = jsonRequest({
+      sourceAnalysisId: "a1",
+      consumedIngredients: [{ ingredientId: "ing_chicken", quantity: 100, unit: "g" }],
+    });
+
+    const first = await json(await call("/v1/fridge/consume", requestBody, env));
+    expect(first.consumed).toEqual([{ ingredientId: "ing_chicken", newQuantity: 200 }]);
+
+    // 2回目呼び出し(二重タップ・クライアント側リトライを想定)。在庫はもう一度減らされてはいけない。
+    const second = await json(await call("/v1/fridge/consume", requestBody, env));
+    expect(second.consumed).toEqual([{ ingredientId: "ing_chicken", newQuantity: 200 }]);
+
+    const chickenAfter = fakeDdb.store.get(`USER#${userId}#ITEM#item_chicken`);
+    expect(chickenAfter?.quantity).toBe(200); // 100を2回引いた0ではなく、1回分の200のまま
+  });
+
+  it("rejects consumedIngredients containing an ingredientId the AI never suggested for this dish", async () => {
+    const userId = "user-1";
+    const env = authEnv(userId);
+
+    fakeDdb.store.set(`USER#${userId}#ANALYSIS#a1`, {
+      PK: `USER#${userId}`,
+      SK: "ANALYSIS#a1",
+      entityType: "ImageAnalysis",
+      userId,
+      analysisId: "a1",
+      imageKey: `users/${userId}/uploads/dish.jpg`,
+      type: "dish",
+      status: "completed",
+      result: {
+        kind: "dish",
+        dish: "親子丼",
+        ingredients: [{ name: "鶏肉", ingredientId: "ing_chicken", confidence: 0.94 }],
+      },
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    });
+
+    const res = await call(
+      "/v1/fridge/consume",
+      jsonRequest({
+        sourceAnalysisId: "a1",
+        // ing_beef はAIの候補(鶏肉のみ)に含まれていない
+        consumedIngredients: [{ ingredientId: "ing_beef", quantity: 100, unit: "g" }],
+      }),
+      env,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects consume when the analysis is not a completed dish analysis", async () => {
+    const userId = "user-1";
+    const env = authEnv(userId);
+
+    fakeDdb.store.set(`USER#${userId}#ANALYSIS#a2`, {
+      PK: `USER#${userId}`,
+      SK: "ANALYSIS#a2",
+      entityType: "ImageAnalysis",
+      userId,
+      analysisId: "a2",
+      imageKey: `users/${userId}/uploads/dish2.jpg`,
+      type: "dish",
+      status: "pending", // まだ解析中
+      result: null,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    });
+
+    const res = await call(
+      "/v1/fridge/consume",
+      jsonRequest({
+        sourceAnalysisId: "a2",
+        consumedIngredients: [{ ingredientId: "ing_chicken", quantity: 100, unit: "g" }],
+      }),
+      env,
+    );
+    expect(res.status).toBe(400);
+  });
 });

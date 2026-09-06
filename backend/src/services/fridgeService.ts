@@ -1,5 +1,6 @@
 import {
   DeleteCommand,
+  GetCommand,
   PutCommand,
   QueryCommand,
   UpdateCommand,
@@ -15,7 +16,12 @@ const DAYS_SOON_THRESHOLD = 3;
 
 export function computeExpiryStatus(expiresAt: string | null, now = new Date()): ExpiryStatus {
   if (!expiresAt) return "none";
-  const diffMs = new Date(`${expiresAt}T00:00:00`).getTime() - now.getTime();
+  const target = new Date(`${expiresAt}T00:00:00`);
+  // API入力はDateOnlyStringSchemaで実在する日付のみ通す設計だが、既存データや
+  // 将来の変更で不正な文字列が紛れ込んだ場合にNaN比較で静かに"ok"を返してしまう
+  // (期限切れなのに気づけない)事故を避けるため、ここでも防御的にガードする。
+  if (Number.isNaN(target.getTime())) return "none";
+  const diffMs = target.getTime() - now.getTime();
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
   if (diffDays < 0) return "expired";
   if (diffDays <= DAYS_SOON_THRESHOLD) return "soon";
@@ -148,10 +154,61 @@ export interface ConsumeResult {
   skipped: Array<{ ingredientId: string; reason: string }>;
 }
 
+function recipeResultFrom(recipe: RecipeAnalysis): ConsumeResult {
+  const result: ConsumeResult = { consumed: [], skipped: [] };
+  for (const ing of recipe.ingredients) {
+    if (ing.consumed) {
+      result.consumed.push({ ingredientId: ing.ingredientId, newQuantity: ing.newQuantityAfterConsume ?? 0 });
+    } else {
+      result.skipped.push({ ingredientId: ing.ingredientId, reason: "not_in_fridge" });
+    }
+  }
+  return result;
+}
+
+/**
+ * 冪等性の要(POST /v1/fridge/consume は二重タップやクライアント側リトライで
+ * 複数回呼ばれうる)。sourceAnalysisIdごとに1回しか在庫を減算させないよう、
+ * 処理開始前にRecipeAnalysisレコードを条件付きで「確保」する。
+ * 既に確保済み(=既に処理済みか処理中)であれば false を返し、
+ * 呼び出し元は在庫を一切書き換えずに前回の結果を返すべきと判断できる。
+ */
+async function claimConsumption(
+  userId: string,
+  sourceAnalysisId: string,
+  dishName: string,
+): Promise<boolean> {
+  try {
+    await ddb.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: {
+          PK: Keys.user(userId),
+          SK: Keys.recipe(sourceAnalysisId),
+          entityType: "RecipeAnalysis",
+          userId,
+          analysisId: sourceAnalysisId,
+          dishName,
+          ingredients: [],
+          createdAt: new Date().toISOString(),
+        } satisfies RecipeAnalysis & Record<"PK" | "SK", string>,
+        ConditionExpression: "attribute_not_exists(PK)",
+      }),
+    );
+    return true;
+  } catch (err) {
+    if (isConditionalCheckFailed(err)) return false;
+    throw err;
+  }
+}
+
 /**
  * 料理写真解析でユーザーが確定した「使用食材」を在庫から減算する。
  * 在庫が0以下になった場合は削除せずquantity=0として保持する(要件通り)。
  * 各食材の在庫更新は別々のDynamoDBアイテムに対する独立した書き込みなので並列実行する。
+ *
+ * 同じsourceAnalysisIdで2回目以降呼ばれた場合(冪等性): 在庫は一切変更せず、
+ * 1回目の処理結果をRecipeAnalysisレコードから再構築して返す。
  */
 export async function consumeIngredients(
   userId: string,
@@ -159,6 +216,22 @@ export async function consumeIngredients(
   dishName: string,
   consumedIngredients: Array<{ ingredientId: string; quantity: number; unit: string }>,
 ): Promise<ConsumeResult> {
+  const claimed = await claimConsumption(userId, sourceAnalysisId, dishName);
+  if (!claimed) {
+    const existing = await ddb.send(
+      new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { PK: Keys.user(userId), SK: Keys.recipe(sourceAnalysisId) },
+      }),
+    );
+    if (!existing.Item) {
+      // 理論上は起きないはず(直前のclaimConsumptionが条件不成立=既に存在するはずなので)だが、
+      // 削除等で消えていた場合に無限に空レスポンスを返し続けるよりは明示的にエラーにする。
+      throw new Error(`consume claim conflict but no existing RecipeAnalysis found for ${sourceAnalysisId}`);
+    }
+    return recipeResultFrom(existing.Item as RecipeAnalysis);
+  }
+
   const allItems = await queryFridgeItems(userId);
 
   // 各食材の更新は独立したDynamoDBアイテムへの書き込みなので並列実行するが、
@@ -214,6 +287,7 @@ export async function consumeIngredients(
         consumed: true,
         consumedQuantity: outcome.quantity,
         unit: outcome.unit,
+        newQuantityAfterConsume: outcome.newQuantity,
       });
     }
   }

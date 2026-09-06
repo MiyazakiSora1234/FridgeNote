@@ -65,6 +65,12 @@ export interface RecipeAnalysisIngredient {
   consumed: boolean;
   consumedQuantity?: number;
   unit?: string;
+  /**
+   * 消費確定時点でのFridgeItemの残量スナップショット。
+   * POST /v1/fridge/consume の冪等リプレイ時に、初回と同じレスポンス
+   * ({ consumed: [{ ingredientId, newQuantity }] }) を再構築するために保持する。
+   */
+  newQuantityAfterConsume?: number;
 }
 
 export interface RecipeAnalysis {

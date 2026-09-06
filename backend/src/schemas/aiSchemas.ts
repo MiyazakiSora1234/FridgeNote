@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DateOnlyStringSchema } from "../lib/dateSchema.js";
 
 /**
  * Bedrockへ渡すJSON Schema(Tool useのinput schemaとしても、プロンプト内提示用としても使う)。
@@ -60,12 +61,7 @@ export const RawFoodAnalysisSchema = z.object({
   ]),
   quantity: z.number().finite().positive().max(100000),
   unit: z.string().min(1).max(20),
-  expiresAtEstimate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .nullable()
-    .optional()
-    .default(null),
+  expiresAtEstimate: DateOnlyStringSchema.nullable().optional().default(null),
   confidence: z.number().min(0).max(1),
 });
 export type RawFoodAnalysis = z.infer<typeof RawFoodAnalysisSchema>;

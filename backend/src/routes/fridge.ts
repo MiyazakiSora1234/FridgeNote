@@ -5,7 +5,7 @@ import {
   CreateFridgeItemRequestSchema,
   UpdateFridgeItemRequestSchema,
 } from "../schemas/apiSchemas.js";
-import { validationErrorFromZod } from "../lib/errors.js";
+import { ValidationError, validationErrorFromZod } from "../lib/errors.js";
 import {
   consumeIngredients,
   createFridgeItem,
@@ -73,9 +73,23 @@ fridgeRoute.post("/consume", async (c) => {
   const userId = c.get("userId");
   // sourceAnalysisIdの所有者チェックを兼ねて取得(他人の解析結果からは消費できない)
   const analysis = await getAnalysis(userId, body.data.sourceAnalysisId);
-  const dishName =
-    analysis.result && analysis.result.kind === "dish" ? analysis.result.dish : "unknown";
 
+  // 「使用した食材候補」を確認してから消費する、という機能の意図上、
+  // AIが実際に提案していない食材IDを勝手に消費対象にはできないようにする。
+  if (analysis.status !== "completed" || !analysis.result || analysis.result.kind !== "dish") {
+    throw ValidationError("sourceAnalysisId must reference a completed dish analysis");
+  }
+  const candidateIngredientIds = new Set(analysis.result.ingredients.map((i) => i.ingredientId));
+  const unknownIngredientIds = body.data.consumedIngredients
+    .map((i) => i.ingredientId)
+    .filter((id) => !candidateIngredientIds.has(id));
+  if (unknownIngredientIds.length > 0) {
+    throw ValidationError(
+      `consumedIngredients contains ingredients the AI did not suggest for this dish: ${unknownIngredientIds.join(", ")}`,
+    );
+  }
+
+  const dishName = analysis.result.dish;
   const result = await consumeIngredients(
     userId,
     body.data.sourceAnalysisId,
