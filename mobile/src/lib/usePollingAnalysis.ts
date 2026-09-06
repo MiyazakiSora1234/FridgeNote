@@ -2,14 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 
 const DEFAULT_INTERVAL_MS = 3000;
-const DEFAULT_MAX_POLLS = 30; // 約90秒でタイムアウト扱いにする
+const DEFAULT_MAX_POLLS = 30;
 
-/**
- * 「pending/processingの間は一定間隔で再取得し、それ以外(completed/failed)に
- * なったら止める」というAI解析結果のポーリングを共通化するフック。
- * 画像解析(AnalysisResultScreen)と音声解析(VoiceConfirmScreen)は別エンティティ・
- * 別エンドポイントだが、待ち方のロジックは同じなのでここに一本化する。
- */
 export function usePollingAnalysis<T extends { status: string }>(
   fetcher: () => Promise<T>,
   deps: unknown[],
@@ -24,8 +18,6 @@ export function usePollingAnalysis<T extends { status: string }>(
 
   useEffect(() => {
     let cancelled = false;
-    // アプリがバックグラウンドに回っている間にポーリングが1回分「見送られた」ことを示す。
-    // フォアグラウンド復帰時、このフラグが立っていれば即座に再開する。
     let deferredWhileBackground = false;
     pollCount.current = 0;
     setData(null);
@@ -35,8 +27,6 @@ export function usePollingAnalysis<T extends { status: string }>(
     const poll = async () => {
       if (cancelled) return;
       if (AppState.currentState !== "active") {
-        // バックグラウンド中はfetch自体を行わない(無駄なAPIコール・電池消費を避ける)。
-        // 次のタイマーは張らず、フォアグラウンド復帰時のAppStateリスナーに再開を任せる。
         deferredWhileBackground = true;
         return;
       }
@@ -69,8 +59,6 @@ export function usePollingAnalysis<T extends { status: string }>(
       cancelled = true;
       subscription.remove();
     };
-    // fetcher/options は呼び出し側でインライン生成されがちで参照が毎回変わるため、
-    // 依存配列は呼び出し側が明示的に渡す deps (analysisIdなど) だけを使う。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 

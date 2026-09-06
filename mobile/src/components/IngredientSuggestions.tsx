@@ -3,11 +3,6 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { IngredientCandidate } from "../types";
 import { colors, radius, spacing } from "../theme";
 
-/**
- * 食材名入力欄の下に出す、既存の食材マスターからのサジェストチップ。
- * タップすると入力欄の値をそのサジェストの正式名称で置き換える(誤字・表記ゆれの混入や、
- * それによる食材マスターの意図しない新規増殖(docs/architecture.md参照)を防ぐ狙い)。
- */
 export function IngredientSuggestions({
   suggestions,
   onSelect,

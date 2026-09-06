@@ -21,7 +21,6 @@ interface Props {
   navigation: NativeStackNavigationProp<RootStackParamList, "AnalysisResult">;
 }
 
-/** 食材写真のAI認識結果を、ユーザーが確認・修正してから冷蔵庫へ登録するフォーム。 */
 export function FoodConfirmForm({ analysisId, result, navigation }: Props) {
   const [name, setName] = useState(result.name);
   const [quantity, setQuantity] = useState(String(result.quantity));

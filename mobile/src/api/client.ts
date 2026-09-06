@@ -53,8 +53,6 @@ async function request<T>(
 
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
-    // サーバーのレスポンス形状がクライアントの想定と食い違っている。
-    // 型注釈だけでは検知できないため、ここでランタイム検証して早期に気づけるようにする。
     throw new ApiClientError(
       502,
       "UNEXPECTED_RESPONSE_SHAPE",
@@ -64,7 +62,6 @@ async function request<T>(
   return parsed.data;
 }
 
-/** レスポンスボディを検証する必要がないエンドポイント(204 No Content等)向け。 */
 async function requestVoid(path: string, init: { method?: string; body?: unknown } = {}): Promise<void> {
   const idToken = await getCurrentIdToken();
   if (!idToken) throw new ApiClientError(401, "UNAUTHENTICATED", "not signed in");
@@ -98,7 +95,6 @@ export const api = {
       PresignedUrlResponseSchema,
     ),
 
-  /** 画像・音声どちらも同じ仕組み(Presigned URLへの直接PUT)でアップロードするため共通化している。 */
   uploadFileToS3: async (uploadUrl: string, fileUri: string, contentType: string): Promise<void> => {
     const blob = await (await fetch(fileUri)).blob();
     const res = await fetch(uploadUrl, {
@@ -124,7 +120,6 @@ export const api = {
     sourceAnalysisId?: string;
   }) => request("/v1/fridge/items", { method: "POST", body: input }, FridgeItemSchema),
 
-  /** レシート/音声の確認画面で「すべて追加」を押したときに呼ぶ一括登録。 */
   createFridgeItemsBulk: (input: {
     source: "receipt" | "voice";
     sourceAnalysisId?: string;

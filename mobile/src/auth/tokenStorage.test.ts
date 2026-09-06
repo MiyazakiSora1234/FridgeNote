@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-/**
- * AsyncStorageの実体(ネイティブモジュール)には依存せず、インメモリの
- * フェイク実装に差し替えてテストする(vitest.config.tsの方針: RN依存の
- * 実行環境なしに動く純粋なロジックだけをテストする、に沿う)。
- */
 const fakeAsyncStorage = new Map<string, string>();
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
@@ -47,7 +42,6 @@ describe("tokenStorage (Cognito Storage adapter)", () => {
     const { cognitoStorage } = await freshModule();
     cognitoStorage.setItem("CognitoIdentityServiceProvider.client.LastAuthUser", "user@example.com");
 
-    // AsyncStorageへの書き込みはfire-and-forgetのため、マイクロタスクの完了を待つ。
     await new Promise((r) => setTimeout(r, 0));
     expect(fakeAsyncStorage.get("@FridgeNoteAuth:CognitoIdentityServiceProvider.client.LastAuthUser")).toBe(
       "user@example.com",
@@ -67,18 +61,16 @@ describe("tokenStorage (Cognito Storage adapter)", () => {
   });
 
   it("hydrateCognitoStorage() restores previously persisted values into a fresh in-memory cache", async () => {
-    // 1回目のモジュールインスタンスで書き込み、AsyncStorageへの反映を待つ
     const first = await freshModule();
     first.cognitoStorage.setItem("token", "abc123");
     await new Promise((r) => setTimeout(r, 0));
 
-    // アプリ再起動を模して、モジュールを読み直す(=メモリキャッシュが空の状態に戻る)
     vi.resetModules();
     const second = await freshModule();
-    expect(second.cognitoStorage.getItem("token")).toBeNull(); // hydrate前は空
+    expect(second.cognitoStorage.getItem("token")).toBeNull();
 
     await second.hydrateCognitoStorage();
-    expect(second.cognitoStorage.getItem("token")).toBe("abc123"); // hydrate後は復元されている
+    expect(second.cognitoStorage.getItem("token")).toBe("abc123");
   });
 
   it("hydrateCognitoStorage() only reads AsyncStorage once even when called concurrently", async () => {

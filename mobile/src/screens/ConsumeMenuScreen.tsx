@@ -7,7 +7,6 @@ import { colors, spacing, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ConsumeMenu">;
 
-/** 「減らす」の入口メニュー。用途に応じて2つの減算手段から選ぶ。 */
 export function ConsumeMenuScreen({ navigation }: Props) {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>

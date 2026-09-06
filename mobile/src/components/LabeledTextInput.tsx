@@ -7,7 +7,6 @@ interface Props extends TextInputProps {
   label: string;
 }
 
-/** ラベル + 入力欄のペア。手動登録フォーム・AI認識結果の編集フォームで共通利用する。 */
 export function LabeledTextInput({ label, style, ...rest }: Props) {
   return (
     <View style={styles.container}>

@@ -13,11 +13,6 @@ import { colors, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AnalysisResult">;
 
-/**
- * AI解析結果のポーリングと、状態(解析中/失敗/タイムアウト/完了)ごとの画面出し分けだけを担う。
- * 「食材写真の確認フォーム」「料理写真の使用食材確認フォーム」「レシートの一括確認フォーム」は
- * それぞれ独立したコンポーネント(./analysisResult/)に分離している。
- */
 export function AnalysisResultScreen({ route, navigation }: Props) {
   const { analysisId } = route.params;
   const { data: analysis, timedOut } = usePollingAnalysis<ImageAnalysis>(

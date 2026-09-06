@@ -14,10 +14,6 @@ interface Props {
   fullWidth?: boolean;
 }
 
-/**
- * React Native標準の<Button>は角丸・余白・配色を一切カスタマイズできず
- * プラットフォームデフォルトの見た目になってしまうため、代わりにこれを使う。
- */
 export function Button({ title, onPress, variant = "primary", loading, disabled, style, fullWidth = true }: Props) {
   const isDisabled = disabled || loading;
 
@@ -43,7 +39,6 @@ export function Button({ title, onPress, variant = "primary", loading, disabled,
   );
 }
 
-/** アイコン(絵文字)+短いラベルの、正方形に近いタイル型ボタン。主要アクションの入口に使う。 */
 export function ActionTile({
   emoji,
   label,
@@ -61,11 +56,6 @@ export function ActionTile({
   );
 }
 
-/**
- * アイコン+タイトル+説明文を横並びにした、リスト型のメニュー項目ボタン。
- * ActionTile(正方形・アイコン+短いラベルのみ)より情報量が多い選択肢
- * (追加/減らすメニューの各手段の説明)を出すのに使う。
- */
 export function MenuTile({
   emoji,
   label,
@@ -89,7 +79,6 @@ export function MenuTile({
   );
 }
 
-/** アイコンのみの小さな丸ボタン(一覧行の削除ボタン等)。 */
 export function IconButton({
   emoji,
   onPress,

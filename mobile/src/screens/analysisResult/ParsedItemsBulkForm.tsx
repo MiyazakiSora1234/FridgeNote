@@ -26,13 +26,6 @@ interface ItemDraft extends Omit<ParsedIngredientItem, "quantity"> {
   quantity: string;
 }
 
-/**
- * レシートOCR/音声認識、どちらの結果も同じ形(ParsedIngredientItem[])に正規化されて
- * 届くため、確認チェックリスト+一括登録UIをこの1コンポーネントに共通化している
- * (DishConfirmFormと似た「チェックを外したものは登録しない」という考え方だが、
- * 対象が単一の解析ではなく複数件のリストである点が異なる)。
- * confidenceがAI_CONFIDENCE_THRESHOLD未満の項目は、誤登録を避けるため既定で未選択にする。
- */
 export function ParsedItemsBulkForm({ analysisId, source, items, title, onDone }: Props) {
   const [drafts, setDrafts] = useState<ItemDraft[]>(
     items.map((item) => ({ ...item, checked: !item.belowConfidenceThreshold, quantity: String(item.quantity) })),
@@ -91,11 +84,6 @@ export function ParsedItemsBulkForm({ analysisId, source, items, title, onDone }
   );
 }
 
-/**
- * 1行分(1食材候補分)の表示・編集。食材名のオートコンプリート(useIngredientSuggestions)は
- * 行ごとに独立した検索状態を持つ必要があり、フックをmap()のコールバック内で直接呼べないため、
- * この単位でコンポーネントとして切り出している。
- */
 function ParsedItemRow({ draft, onChange }: { draft: ItemDraft; onChange: (patch: Partial<ItemDraft>) => void }) {
   const suggestions = useIngredientSuggestions(draft.name);
 

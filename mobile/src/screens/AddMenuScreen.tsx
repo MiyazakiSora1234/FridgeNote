@@ -7,7 +7,6 @@ import { colors, spacing, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AddMenu">;
 
-/** 「追加する」の入口メニュー。用途に応じて4つの追加手段から選ぶ。 */
 export function AddMenuScreen({ navigation }: Props) {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>

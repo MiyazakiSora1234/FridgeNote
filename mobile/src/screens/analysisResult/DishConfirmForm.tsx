@@ -26,10 +26,6 @@ interface IngredientDraft extends DishAnalysisIngredient {
   unit: string;
 }
 
-/**
- * 料理写真のAI認識結果(使用食材候補)を、ユーザーが確認してから在庫を減算するフォーム。
- * AIの推定はあくまで候補であり、チェックを外した食材は在庫から減算されない。
- */
 export function DishConfirmForm({ analysisId, dish, ingredients, navigation }: Props) {
   const [drafts, setDrafts] = useState<IngredientDraft[]>(
     ingredients.map((ing) => ({ ...ing, checked: true, quantity: "1", unit: "" })),

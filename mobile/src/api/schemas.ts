@@ -1,16 +1,5 @@
 import { z } from "zod";
 
-/**
- * バックエンドのレスポンス形状をここで定義し、api/client.ts が実際に
- * ランタイムで検証する。以前は型注釈だけ(コンパイル時のみ)で、
- * バックエンドのレスポンスが実際にその形をしているかは保証していなかった
- * ため、将来APIが変わった際に画面の奥でundefinedアクセスして落ちる、
- * といった壊れ方をしかねなかった。
- *
- * mobile/src/types/index.ts はここから型を再エクスポートしているだけなので、
- * 型定義はこのファイルが単一の情報源(single source of truth)になる。
- */
-
 export const ExpiryStatusSchema = z.enum(["expired", "soon", "ok", "none"]);
 
 export const FridgeItemSchema = z.object({
@@ -56,11 +45,6 @@ export const DishAnalysisResultSchema = z.object({
   ingredients: z.array(DishAnalysisIngredientSchema),
 });
 
-/**
- * レシートOCR/音声認識、どちらも最終的にこの形(食材名+数量+単位+確信度)に正規化されて
- * 返ってくる(backend/src/types/index.ts の ParsedIngredientItem と同じ形)。
- * 確認画面(チェックリスト+一括登録)を両方で共通利用できるようにするため。
- */
 export const ParsedIngredientItemSchema = z.object({
   name: z.string(),
   ingredientId: z.string(),
@@ -107,10 +91,6 @@ export const ConsumeResponseSchema = z.object({
   skipped: z.array(z.object({ ingredientId: z.string(), reason: z.string() })),
 });
 
-/**
- * 音声入力は画像ではないため ImageAnalysis とは別のエンティティ・エンドポイント
- * (GET /v1/voice/transcriptions/:id)を使うが、ステータス遷移の考え方は共通。
- */
 export const VoiceAnalysisSchema = z.object({
   analysisId: z.string(),
   audioKey: z.string(),
@@ -127,7 +107,6 @@ export const CreateVoiceTranscriptionResponseSchema = z.object({
   status: AnalysisStatusSchema,
 });
 
-/** レシート/音声の確認画面で「すべて追加」を押したときのレスポンス。 */
 export const BulkCreateFridgeItemsResponseSchema = z.object({
   items: z.array(FridgeItemSchema),
 });

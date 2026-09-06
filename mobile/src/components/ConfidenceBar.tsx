@@ -3,7 +3,6 @@ import { StyleSheet, Text, View } from "react-native";
 import { colors, radius } from "../theme";
 import { LOW_CONFIDENCE_THRESHOLD } from "../constants";
 
-/** AIの確信度を数字だけでなくバーで視覚化する(パッと見て「怪しいかどうか」が伝わるように)。 */
 export function ConfidenceBar({ confidence }: { confidence: number }) {
   const percent = Math.round(confidence * 100);
   const isLow = confidence < LOW_CONFIDENCE_THRESHOLD;

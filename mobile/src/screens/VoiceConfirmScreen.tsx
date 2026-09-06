@@ -11,11 +11,6 @@ import { colors, typography } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "VoiceConfirm">;
 
-/**
- * 音声解析(Transcribe -> Bedrock)結果のポーリングと状態出し分け。
- * AnalysisResultScreenの画像解析版と考え方は同じ(usePollingAnalysisフックを共通利用)だが、
- * VoiceAnalysisはImageAnalysisとは別エンティティ・別エンドポイントのため画面も分けている。
- */
 export function VoiceConfirmScreen({ route, navigation }: Props) {
   const { analysisId } = route.params;
   const { data: analysis, timedOut } = usePollingAnalysis<VoiceAnalysis>(

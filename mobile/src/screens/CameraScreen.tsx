@@ -13,7 +13,6 @@ import { colors, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Camera">;
 
-/** 撮影・アルバム選択どちらの経路でも同じアップロード〜解析開始フローを使う。 */
 async function uploadAndAnalyze(
   uri: string,
   analysisType: AnalysisType,
