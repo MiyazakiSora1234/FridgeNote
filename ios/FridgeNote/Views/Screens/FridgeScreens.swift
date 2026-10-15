@@ -77,7 +77,7 @@ struct FridgeListView: View {
         }
         .refreshable { await load() }
         .screenBackground()
-        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             // 初回表示と、追加・減算画面から戻ったときに最新化する。
             Task { await load() }

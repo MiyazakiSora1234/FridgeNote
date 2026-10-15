@@ -52,7 +52,7 @@ struct SignInView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .screenBackground()
-        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
     }
 
     private func submit() async {

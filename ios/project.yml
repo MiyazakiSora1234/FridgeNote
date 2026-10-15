@@ -41,6 +41,17 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.fridgenote.app.tests
         GENERATE_INFOPLIST_FILE: YES
+  FridgeNoteUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - FridgeNoteUITests
+    dependencies:
+      - target: FridgeNote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fridgenote.app.uitests
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   FridgeNote:
     build:
@@ -52,3 +63,4 @@ schemes:
       config: Debug
       targets:
         - FridgeNoteTests
+        - FridgeNoteUITests

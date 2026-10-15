@@ -172,29 +172,26 @@ final class APIClient {
         return response.items
     }
 
-    @discardableResult
-    func createFridgeItem(_ body: CreateFridgeItemBody) async throws -> FridgeItem {
-        try await request("/v1/fridge/items", method: "POST", body: body)
+    // 書き込み系のレスポンスは保存された生のエンティティで、一覧用の expiryStatus 等を含まない。
+    // 呼び出し側は結果を使わず一覧を再取得するので、本文はデコードしない。
+    func createFridgeItem(_ body: CreateFridgeItemBody) async throws {
+        _ = try await send("/v1/fridge/items", method: "POST", body: try encoder.encode(body))
     }
 
-    @discardableResult
-    func createFridgeItemsBulk(_ body: BulkCreateBody) async throws -> [FridgeItem] {
-        let response: BulkCreateFridgeItemsResponse = try await request("/v1/fridge/items/bulk", method: "POST", body: body)
-        return response.items
+    func createFridgeItemsBulk(_ body: BulkCreateBody) async throws {
+        _ = try await send("/v1/fridge/items/bulk", method: "POST", body: try encoder.encode(body))
     }
 
-    @discardableResult
-    func updateFridgeItem(_ itemId: String, patch: UpdateFridgeItemBody) async throws -> FridgeItem {
-        try await request("/v1/fridge/items/\(itemId)", method: "PATCH", body: patch)
+    func updateFridgeItem(_ itemId: String, patch: UpdateFridgeItemBody) async throws {
+        _ = try await send("/v1/fridge/items/\(itemId)", method: "PATCH", body: try encoder.encode(patch))
     }
 
     func deleteFridgeItem(_ itemId: String) async throws {
         _ = try await send("/v1/fridge/items/\(itemId)", method: "DELETE")
     }
 
-    @discardableResult
-    func consume(_ body: ConsumeBody) async throws -> ConsumeResponse {
-        try await request("/v1/fridge/consume", method: "POST", body: body)
+    func consume(_ body: ConsumeBody) async throws {
+        _ = try await send("/v1/fridge/consume", method: "POST", body: try encoder.encode(body))
     }
 
     // MARK: 世帯(家族共有)

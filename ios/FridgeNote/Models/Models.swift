@@ -24,6 +24,24 @@ struct FridgeItem: Decodable, Identifiable, Equatable {
     let expiryStatus: ExpiryStatus
 
     var id: String { itemId }
+
+    private enum CodingKeys: String, CodingKey {
+        case itemId, ingredientId, name, category, quantity, unit, expiresAt, createdAt, updatedAt, expiryStatus
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        itemId = try c.decode(String.self, forKey: .itemId)
+        ingredientId = try c.decode(String.self, forKey: .ingredientId)
+        name = try c.decode(String.self, forKey: .name)
+        category = try c.decode(String.self, forKey: .category)
+        quantity = try c.decode(Double.self, forKey: .quantity)
+        unit = try c.decode(String.self, forKey: .unit)
+        expiresAt = try c.decodeIfPresent(String.self, forKey: .expiresAt)
+        createdAt = try c.decode(String.self, forKey: .createdAt)
+        updatedAt = try c.decode(String.self, forKey: .updatedAt)
+        expiryStatus = try c.decodeIfPresent(ExpiryStatus.self, forKey: .expiryStatus) ?? .none
+    }
 }
 
 struct FridgeItemListResponse: Decodable {
