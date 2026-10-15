@@ -34,13 +34,15 @@ fi
 ARCHIVE="build/FridgeNote.xcarchive"
 rm -rf "$ARCHIVE"
 
+# SSH経由などGUIのないセッションではローカルのKeychainを使う署名ができない。
+# Archive は署名なしで作り、exportArchive で App Store Connect API キーによるクラウド署名に任せる。
 xcodebuild archive \
   -project FridgeNote.xcodeproj \
   -scheme FridgeNote \
   -destination "generic/platform=iOS" \
   -archivePath "$ARCHIVE" \
   DEVELOPMENT_TEAM="$TEAM_ID" \
-  "${AUTH[@]}"
+  CODE_SIGNING_ALLOWED=NO
 
 xcodebuild -exportArchive \
   -archivePath "$ARCHIVE" \
