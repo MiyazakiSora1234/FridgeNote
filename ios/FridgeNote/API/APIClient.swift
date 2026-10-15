@@ -70,6 +70,7 @@ private struct PresignBody: Encodable { let contentType: String }
 private struct CreateAnalysisBody: Encodable { let imageKey: String; let type: String }
 private struct CreateVoiceBody: Encodable { let audioKey: String }
 private struct SearchBody: Encodable { let query: String; let limit: Int? }
+private struct JoinHouseholdBody: Encodable { let code: String; let displayName: String? }
 
 // MARK: - クライアント
 
@@ -194,6 +195,28 @@ final class APIClient {
     @discardableResult
     func consume(_ body: ConsumeBody) async throws -> ConsumeResponse {
         try await request("/v1/fridge/consume", method: "POST", body: body)
+    }
+
+    // MARK: 世帯(家族共有)
+
+    func getHousehold() async throws -> Household {
+        try await request("/v1/household")
+    }
+
+    func createHouseholdInvite() async throws -> HouseholdInvite {
+        try await request("/v1/household/invites", method: "POST")
+    }
+
+    func joinHousehold(code: String, displayName: String?) async throws -> Household {
+        try await request("/v1/household/join", method: "POST", body: JoinHouseholdBody(code: code, displayName: displayName))
+    }
+
+    func leaveHousehold() async throws {
+        _ = try await send("/v1/household/leave", method: "POST")
+    }
+
+    func removeHouseholdMember(_ userId: String) async throws {
+        _ = try await send("/v1/household/members/\(userId)", method: "DELETE")
     }
 
     // MARK: 食材マスター

@@ -169,3 +169,29 @@ struct IngredientCandidate: Decodable, Identifiable {
 struct IngredientSearchResponse: Decodable {
     let candidates: [IngredientCandidate]
 }
+
+// MARK: - 世帯(家族共有)
+
+struct HouseholdMember: Decodable, Identifiable, Equatable {
+    let userId: String
+    let role: String // "owner" | "member"
+    let displayName: String?
+    let joinedAt: String?
+    let isSelf: Bool
+
+    var id: String { userId }
+    var isOwner: Bool { role == "owner" }
+}
+
+struct Household: Decodable, Equatable {
+    let householdId: String
+    let role: String // 自分の役割: "owner" | "member"
+    let members: [HouseholdMember]
+
+    var isOwner: Bool { role == "owner" }
+}
+
+struct HouseholdInvite: Decodable, Equatable {
+    let code: String
+    let expiresAt: String
+}

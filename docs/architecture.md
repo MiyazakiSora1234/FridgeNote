@@ -75,6 +75,7 @@ flowchart TB
 - モバイルは Amplify Auth もしくは `amazon-cognito-identity-js` で ID Token(JWT) を取得。
 - API Gateway HTTP API の **JWT Authorizer** (Cognito User Pool をIssuerに設定) をルートに適用し、Lambda到達前にJWTを検証。
 - Lambda(Hono)側でも `event.requestContext.authorizer.jwt.claims.sub` から `userId` を取得し、**クライアントが送ってきた `userId` は一切信用しない**。すべてのDB操作はこの `sub` を使う。
+- **世帯(家族共有)**: データの所有単位は`userId`ではなく**世帯ID**。ミドルウェア`resolveHousehold`が`sub`から`PK=USER#<sub>, SK=PROFILE`を`ConsistentRead`で1回引いて世帯IDを解決する(無ければ個人世帯`householdId = sub`)。個人世帯のIDを`sub`と同一にしているため、既存ユーザーのデータ(`PK=USER#<sub>`)は移行なしでそのまま世帯データになる。招待は短い使い切りコード(DynamoDB TTL+読み取り時の期限判定)で、追加のAWSサービスは使わない。詳細は`dynamodb-design.md`と`api-spec.md`を参照。
 - Identity Pool(AWS認証情報付与)は使わない。S3 Presigned URLはバックエンドのLambda実行ロールで署名して払い出すため、モバイル側にAWS権限を持たせる必要がない → IAM設計がシンプルになりセキュリティ面でも有利。
 - CORSはAPI Gateway HTTP APIの`cors_configuration`(`infra/apigateway.tf`、`var.cors_allowed_origins`)だけで完結させる。HTTP APIはプリフライト(OPTIONS)をAPI Gateway層で処理し実レスポンスへもヘッダーを付与するため、Lambda(Hono)側に別途CORSミドルウェアを重ねる必要はなく、むしろ許可オリジンの設定元が2箇所に分散する原因になる(以前はHono側にも`cors()`があったため撤去した)。
 
@@ -168,6 +169,14 @@ Analyzer WorkerがS3オブジェクトキーのプレフィックス `users/{sub
 | CloudTrail | 監査ログ(管理イベントのみ) | リージョンにつき1証跡までの管理イベント記録は無料枠 | ¥0 |
 | CloudWatch Logs | 監視 | 保持14日、ログ量小 | 数十円 |
 | **合計** | | | **概ね ¥250〜600/月**、余裕を持って¥1,000以下に収まる |
+
+### 世帯共有機能によるコスト増の見積もり
+新規リソースは追加しない(既存のDynamoDB/Lambda/API Gatewayのみ。IAM・Terraformの変更も不要)。
+- 全リクエストで所属世帯の解決に`GetItem`(強い整合性、1RRU)が1回増える。5人×1日100リクエストでも月約1.5万RRU → オンデマンド料金で**¥0.1未満**。
+- 招待発行・参加・退出は月に数回程度で`PutItem`/`TransactWriteItems`数件 → 無視できる額。
+- 招待コード・メンバー行は数十バイトで、TTLにより期限切れコードは自動削除される。
+- Lambdaの実行時間は`GetItem`1回分(数ms)増えるのみで無料枠内。
+よって月額の試算(上記合計)は変わらず、¥1,000以下の制約に影響しない。
 
 コストを増大させる典型的な落とし穴として以下は明示的に避ける:
 - Lambdaを VPC 内に置く(NAT Gateway ¥4,500〜/月)

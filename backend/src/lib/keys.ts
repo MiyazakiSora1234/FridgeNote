@@ -2,7 +2,15 @@
 const NO_EXPIRY_SORT_SENTINEL = "9999-99-99";
 
 export const Keys = {
+  // 在庫・解析結果のパーティションは「世帯ID」で決まる(個人世帯のIDはCognito subと同一)。
+  // 引数名がuserIdのままの各serviceには世帯IDを渡す。
   user: (userId: string) => `USER#${userId}`,
+
+  profile: () => "PROFILE",
+  member: (userId: string) => `MEMBER#${userId}`,
+  memberPrefix: () => "MEMBER#",
+  invite: (code: string) => `INVITE#${code}`,
+  inviteMetadata: () => "METADATA",
 
   item: (itemId: string) => `ITEM#${itemId}`,
   itemPrefix: () => "ITEM#",

@@ -3,6 +3,12 @@
 5人規模のトラフィックであり、コスト最優先(オンデマンド課金)かつ実装の単純さを優先し、
 **シングルテーブル設計**を採用する(GSIは最小限に絞る)。テーブル名: `FridgeNoteTable`。
 
+> **世帯(household)対応について**: 下記の`USER#<userId>`パーティションの`<userId>`は、現在は**世帯ID**を指す
+> (コード上の引数名`userId`はそのまま残している)。個人世帯の世帯IDはCognito `sub`と同一なので、
+> 世帯機能の導入前に作られたデータは移行不要でそのまま個人世帯のデータとして読める。
+> 世帯への参加でデータをコピー/移動することはなく、参加者の`PROFILE`が参加先の世帯IDを指すだけで
+> 参照先のパーティションが切り替わる(退出すると元のパーティションに戻る)。
+
 ## 1. アクセスパターン一覧
 
 | # | アクセスパターン | 使用キー |
@@ -16,6 +22,9 @@
 | 7 | 料理解析(RecipeAnalysis)の一覧・取得 | PK=`USER#<userId>`, SK=`RECIPE#<analysisId>` |
 | 8 | 食材マスターをid/名前から引く | PK=`INGREDIENT#<ingredientId>`(別名前引き用GSI3) |
 | 9 | 音声解析ジョブの作成・状態更新・取得 | PK=`USER#<userId>`, SK=`VOICE#<analysisId>` |
+| 11 | JWTのsubから所属世帯IDを解決 | PK=`USER#<sub>`, SK=`PROFILE`(ConsistentRead。無ければ個人世帯) |
+| 12 | 世帯メンバー一覧 | PK=`USER#<householdId>`, SK begins_with `MEMBER#` |
+| 13 | 招待コードの発行・検証・使用 | PK=`INVITE#<code>`, SK=`METADATA` |
 | 10 | audioKeyから音声解析ジョブの重複作成を防止(冪等性) | `analysisId`を`imageKey`と同じ方式(キーのSHA256決定論的ID)で導出するため、専用GSIは不要(PK/SKで直接引ける) |
 
 ## 2. テーブル定義
@@ -116,6 +125,38 @@ SK:    RECIPE#<analysisId>
 }
 ```
 
+### UserProfile(所属世帯)
+無ければ個人世帯。参加時に作成、退出/削除時に削除する。
+```
+PK:    USER#<userId>
+SK:    PROFILE
+{ entityType: "UserProfile", householdId, updatedAt }
+```
+
+### HouseholdMember
+世帯オーナー(`householdId`本人)は個人世帯のままだとレコードを持たず、APIが暗黙にオーナーとして補完する。
+```
+PK:    USER#<householdId>
+SK:    MEMBER#<userId>
+{ entityType: "HouseholdMember", userId, displayName?, joinedAt }
+```
+
+### HouseholdInvite(招待コード)
+8桁の使い切りコード。有効期間24時間。DynamoDB TTLの削除は最大48時間遅れるため、
+`expiresEpoch`を読み取り時にも必ず検証する。参加は`TransactWriteItems`で
+「招待の削除(`attribute_exists`条件)+メンバー行作成+`PROFILE`作成」を原子的に行い、
+同じコードが同時に使われても1人しか成功しない。
+```
+PK:    INVITE#<code>
+SK:    METADATA
+{ entityType: "HouseholdInvite", householdId, createdAt, expiresEpoch, ttl }
+```
+32文字^8桁(約1.1e12通り)+24時間の有効期限+使い切りにより、総当たりは現実的でない。
+
+### 世帯のルール
+- 1ユーザーは同時に1世帯のみ所属。他世帯のメンバー、または他メンバーがいる世帯のオーナーは新しい世帯に参加できない(409)。
+- 最大10人。オーナー(世帯IDの持ち主)は退出不可で、メンバーを削除できる。
+
 ### Ingredient(食材マスター)
 ```
 PK:    INGREDIENT#<ingredientId>
@@ -140,4 +181,4 @@ GSI3SK: NAME#<normalizedName>
 Map索引化、部分一致は線形スキャン)を採用し、テーブル設計はそのまま将来のGSI直引きにも対応できる形にしてある。)
 
 ## 4. TTLの利用
-`ImageAnalysis` は解析完了後も一定期間(例: 90日)保持したのち自動削除してよいため、`ttl` 属性(epoch秒)をDynamoDB TTLに設定しストレージコストを抑制する。`FridgeItem` / `Ingredient` にはTTLを設定しない。
+`ImageAnalysis` は解析完了後も一定期間(例: 90日)保持したのち自動削除してよいため、`ttl` 属性(epoch秒)をDynamoDB TTLに設定しストレージコストを抑制する。`HouseholdInvite` も`ttl`(24時間)で自動削除する。`FridgeItem` / `Ingredient` にはTTLを設定しない。

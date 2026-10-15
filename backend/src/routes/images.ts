@@ -10,7 +10,7 @@ imagesRoute.post("/presigned-url", async (c) => {
   const body = PresignedUrlRequestSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!body.success) throw validationErrorFromZod(body.error);
 
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   const result = await createUploadPresignedUrl(userId, body.data.contentType);
   return c.json(result, 200);
 });

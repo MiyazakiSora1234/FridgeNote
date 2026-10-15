@@ -4,6 +4,10 @@ class ConditionalCheckFailedException extends Error {
   name = "ConditionalCheckFailedException";
 }
 
+class TransactionCanceledException extends Error {
+  name = "TransactionCanceledException";
+}
+
 function keyOf(pk: unknown, sk: unknown): string {
   return `${String(pk)}#${String(sk)}`;
 }
@@ -132,6 +136,21 @@ export function createFakeDdb() {
             return true;
           });
           return { Items: items };
+        }
+        case "TransactWriteCommand": {
+          // 全条件を先に検証し、1つでも不成立なら何も書かない(all-or-nothing)。
+          for (const t of input.TransactItems) {
+            const op = t.Put ?? t.Delete ?? t.ConditionCheck;
+            const k = t.Put ? keyOf(t.Put.Item.PK, t.Put.Item.SK) : keyOf(op.Key.PK, op.Key.SK);
+            if (op.ConditionExpression && !evalCondition(op.ConditionExpression, store.get(k), {})) {
+              throw new TransactionCanceledException("transaction canceled");
+            }
+          }
+          for (const t of input.TransactItems) {
+            if (t.Put) store.set(keyOf(t.Put.Item.PK, t.Put.Item.SK), t.Put.Item);
+            else if (t.Delete) store.delete(keyOf(t.Delete.Key.PK, t.Delete.Key.SK));
+          }
+          return {};
         }
         default:
           throw new Error(`fakeDdb: unsupported command ${name}`);

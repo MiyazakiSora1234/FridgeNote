@@ -22,7 +22,7 @@ import { recordVoiceUserFeedback } from "../services/voiceAnalysisService.js";
 export const fridgeRoute = new Hono<AppEnv>();
 
 fridgeRoute.get("/items", async (c) => {
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   const items = await listFridgeItems(userId);
   return c.json({ items }, 200);
 });
@@ -31,7 +31,7 @@ fridgeRoute.post("/items", async (c) => {
   const body = CreateFridgeItemRequestSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!body.success) throw validationErrorFromZod(body.error);
 
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   const source = body.data.sourceAnalysisId ? "image_food" : "manual";
   const item = await createFridgeItem(userId, {
     ingredientName: body.data.ingredientName,
@@ -58,7 +58,7 @@ fridgeRoute.post("/items/bulk", async (c) => {
   const body = BulkCreateFridgeItemsRequestSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!body.success) throw validationErrorFromZod(body.error);
 
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   const items = await createFridgeItemsBulk(
     userId,
     body.data.items.map((item) => ({
@@ -91,13 +91,13 @@ fridgeRoute.patch("/items/:id", async (c) => {
   const body = UpdateFridgeItemRequestSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!body.success) throw validationErrorFromZod(body.error);
 
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   const item = await updateFridgeItem(userId, c.req.param("id"), body.data);
   return c.json(item, 200);
 });
 
 fridgeRoute.delete("/items/:id", async (c) => {
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   await deleteFridgeItem(userId, c.req.param("id"));
   return c.body(null, 204);
 });
@@ -106,7 +106,7 @@ fridgeRoute.post("/consume", async (c) => {
   const body = ConsumeRequestSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!body.success) throw validationErrorFromZod(body.error);
 
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   const analysis = await getAnalysis(userId, body.data.sourceAnalysisId);
 
   if (analysis.status !== "completed" || !analysis.result || analysis.result.kind !== "dish") {

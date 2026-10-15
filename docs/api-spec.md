@@ -238,6 +238,54 @@ Response 200:
 }
 ```
 
+## 世帯(家族で冷蔵庫を共有)
+在庫(`/v1/fridge/*`)・解析結果(`/v1/analyses/*`, `/v1/voice/*`)・アップロード先(`users/<householdId>/...`)は
+すべて**世帯単位**。サーバーはJWTの`sub`から所属世帯を解決し、リクエストに含まれる世帯IDは一切参照しない。
+未参加のユーザーは個人世帯(`householdId = sub`)で、既存データはそのまま見える(移行不要)。
+`imageKey`/`audioKey`のプレフィックス検証も`users/<householdId>/`で行うため、世帯参加後は
+参加先世帯のプレフィックスでアップロードされる(`POST /v1/images/presigned-url`が払い出すキーをそのまま使えばよい)。
+
+### GET /v1/household
+Response 200:
+```json
+{
+  "householdId": "<owner sub>",
+  "role": "owner",
+  "members": [
+    { "userId": "<sub>", "role": "owner", "isSelf": true },
+    { "userId": "<sub>", "role": "member", "displayName": "お母さん", "joinedAt": "2026-10-15T05:00:00.000Z", "isSelf": false }
+  ]
+}
+```
+`role`は呼び出し元の役割。`owner`は世帯IDと同じsubを持つユーザー。
+
+### POST /v1/household/invites
+招待コードを発行する(世帯メンバーなら誰でも可)。コードは8桁(紛らわしい文字を除く大文字英数)、
+**1回限り・24時間有効**。
+Response 201:
+```json
+{ "code": "K7M2QX9P", "expiresAt": "2026-10-16T05:00:00.000Z" }
+```
+
+### POST /v1/household/join
+Request: `{ "code": "K7M2-QX9P", "displayName": "お母さん" }`(`displayName`は任意、1〜30文字。コードは大文字小文字・ハイフン・空白を無視)
+Response 200: `GET /v1/household` と同じ形(参加後の世帯)。
+
+| status | 条件 |
+|---|---|
+| 404 | コードが存在しない/期限切れ/使用済み |
+| 400 | 自分自身の世帯のコード |
+| 409 | すでに他世帯のメンバー / 自分の世帯に他メンバーがいる / 世帯が満員(10人) |
+
+参加中は参加前の自分の冷蔵庫データは表示されない(削除はされず、退出すると元に戻る)。
+
+### POST /v1/household/leave
+世帯から退出して個人世帯に戻る。Response 204。オーナー(世帯IDの持ち主)は退出できず409。
+
+### DELETE /v1/household/members/:userId
+オーナーのみ。メンバーを世帯から外す(外されたユーザーは個人世帯に戻る)。Response 204。
+オーナー以外が呼ぶと409、自分自身は400、メンバーでない場合は404。
+
 ## 冪等性について
 `POST /v1/analyses` は `imageKey` から決定論的に `analysisId` を導出するため、
 再送信しても既存レコードがそのまま返るだけで自然に冪等(クライアント側でIdempotency-Keyを

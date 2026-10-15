@@ -61,6 +61,8 @@ struct MainView: View {
                         VoiceConfirmView(analysisId: id)
                             .navigationTitle("認識結果の確認")
                             .navigationBarBackButtonHidden(true)
+                    case .household:
+                        HouseholdView().navigationTitle("家族で共有")
                     }
                 }
         }

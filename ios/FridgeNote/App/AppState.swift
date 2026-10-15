@@ -9,6 +9,7 @@ enum Route: Hashable {
     case analysisResult(String)
     case voiceRecord
     case voiceConfirm(String)
+    case household
 }
 
 /// 在庫一覧をルートとするナビゲーション状態。

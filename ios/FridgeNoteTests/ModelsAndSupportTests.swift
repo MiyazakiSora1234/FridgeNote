@@ -17,6 +17,21 @@ final class ModelsAndSupportTests: XCTestCase {
         XCTAssertEqual(response.items.first?.expiryStatus, .soon)
     }
 
+    func testDecodesHousehold() throws {
+        let json = """
+        {"householdId":"owner-sub","role":"member","members":[
+        {"userId":"owner-sub","role":"owner","isSelf":false},
+        {"userId":"me","role":"member","displayName":"お母さん","joinedAt":"2026-10-15T05:00:00.000Z","isSelf":true}]}
+        """
+        let household = try decoder.decode(Household.self, from: Data(json.utf8))
+        XCTAssertFalse(household.isOwner)
+        XCTAssertEqual(household.members.count, 2)
+        XCTAssertNil(household.members[0].displayName)
+        XCTAssertTrue(household.members[0].isOwner)
+        XCTAssertEqual(household.members[1].displayName, "お母さん")
+        XCTAssertTrue(household.members[1].isSelf)
+    }
+
     func testFridgeItemAllowsNullExpiry() throws {
         let json = """
         {"itemId":"i1","ingredientId":"x","name":"卵","category":"dairy","quantity":6,"unit":"個",

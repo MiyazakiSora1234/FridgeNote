@@ -120,3 +120,24 @@ export interface Ingredient {
 export interface AuthContext {
   userId: string;
 }
+
+export type HouseholdRole = "owner" | "member";
+
+export interface HouseholdMember {
+  userId: string;
+  role: HouseholdRole;
+  displayName?: string;
+  joinedAt?: string;
+  isSelf: boolean;
+}
+
+export interface Household {
+  householdId: string;
+  role: HouseholdRole;
+  members: HouseholdMember[];
+}
+
+export interface HouseholdInvite {
+  code: string;
+  expiresAt: string;
+}

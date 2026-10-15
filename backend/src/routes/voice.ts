@@ -11,7 +11,7 @@ voiceRoute.post("/transcriptions", async (c) => {
   if (!body.success) throw validationErrorFromZod(body.error);
 
   // 自分の名前空間以外のaudioKeyを指していないか検証(他人の音声を解析させられないようにする防御)。
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   if (!body.data.audioKey.startsWith(`users/${userId}/audio/`)) {
     throw ForbiddenError("audioKey does not belong to the authenticated user");
   }
@@ -21,7 +21,7 @@ voiceRoute.post("/transcriptions", async (c) => {
 });
 
 voiceRoute.get("/transcriptions/:id", async (c) => {
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   const analysis = await getVoiceAnalysis(userId, c.req.param("id"));
   return c.json(analysis, 200);
 });

@@ -67,3 +67,9 @@ export const IngredientSearchRequestSchema = z.object({
   query: z.string().min(1).max(100),
   limit: z.number().int().positive().max(20).optional().default(5),
 });
+
+// 招待コードは大文字英数(紛らわしい文字除外)8桁。表示用のハイフン/空白/小文字は受け付けて正規化する。
+export const JoinHouseholdRequestSchema = z.object({
+  code: z.string().min(1).max(32),
+  displayName: z.string().trim().min(1).max(30).optional(),
+});

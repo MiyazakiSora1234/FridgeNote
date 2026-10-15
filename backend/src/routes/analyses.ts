@@ -11,7 +11,7 @@ analysesRoute.post("/", async (c) => {
   if (!body.success) throw validationErrorFromZod(body.error);
 
   // 自分の名前空間以外のimageKeyを指していないか検証(他人の画像を解析させられないようにする防御)。
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   if (!body.data.imageKey.startsWith(`users/${userId}/uploads/`)) {
     throw ForbiddenError("imageKey does not belong to the authenticated user");
   }
@@ -21,7 +21,7 @@ analysesRoute.post("/", async (c) => {
 });
 
 analysesRoute.get("/:id", async (c) => {
-  const userId = c.get("userId");
+  const userId = c.get("householdId");
   const analysis = await getAnalysis(userId, c.req.param("id"));
   return c.json(analysis, 200);
 });

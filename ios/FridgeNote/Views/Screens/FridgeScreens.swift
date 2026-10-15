@@ -53,6 +53,16 @@ struct FridgeListView: View {
                 }
 
                 Button {
+                    router.push(.household)
+                } label: {
+                    Text("👪 家族で共有")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.primaryDark)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Theme.Spacing.md)
+                }
+
+                Button {
                     Task { await auth.signOut() }
                 } label: {
                     Text("サインアウト")

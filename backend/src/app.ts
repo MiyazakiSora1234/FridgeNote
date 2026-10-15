@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./middleware/auth.js";
-import { requireAuth } from "./middleware/auth.js";
+import { requireAuth, resolveHousehold } from "./middleware/auth.js";
 import { ApiError } from "./lib/errors.js";
 import { logger } from "./lib/logger.js";
 import { imagesRoute } from "./routes/images.js";
@@ -8,6 +8,7 @@ import { analysesRoute } from "./routes/analyses.js";
 import { fridgeRoute } from "./routes/fridge.js";
 import { voiceRoute } from "./routes/voice.js";
 import { ingredientsRoute } from "./routes/ingredients.js";
+import { householdRoute } from "./routes/household.js";
 
 // CORSはAPI Gateway側のcors_configuration(infra/apigateway.tf)だけで完結させる。
 // ここでHonoのcors()も重ねると許可オリジンの設定元が2箇所に分散するため付けない。
@@ -26,10 +27,12 @@ app.get("/v1/health", (c) => c.json({ ok: true }));
 
 const v1 = new Hono<AppEnv>();
 v1.use("*", requireAuth);
+v1.use("*", resolveHousehold);
 v1.route("/images", imagesRoute);
 v1.route("/analyses", analysesRoute);
 v1.route("/fridge", fridgeRoute);
 v1.route("/voice", voiceRoute);
 v1.route("/ingredients", ingredientsRoute);
+v1.route("/household", householdRoute);
 
 app.route("/v1", v1);
