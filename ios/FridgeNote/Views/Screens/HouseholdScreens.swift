@@ -145,9 +145,10 @@ struct HouseholdView: View {
     // MARK: 表示整形
 
     private func label(for member: HouseholdMember) -> String {
-        var name = member.displayName ?? (member.isOwner ? "オーナー" : "メンバー")
-        if member.isSelf { name += "(あなた)" }
-        return name
+        if let displayName = member.displayName {
+            return member.isSelf ? "\(displayName)(あなた)" : displayName
+        }
+        return member.isSelf ? "あなた" : (member.isOwner ? "オーナー" : "メンバー")
     }
 
     private var normalizedJoinCode: String {

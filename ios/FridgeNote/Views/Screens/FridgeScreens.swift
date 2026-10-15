@@ -317,6 +317,7 @@ struct ConsumeManualView: View {
                 )
                 .multilineTextAlignment(.center)
                 .frame(width: 80)
+                .accessibilityIdentifier("consumeAmountField")
                 AppButton(
                     title: "減らす",
                     loading: submittingItemId == item.itemId,
@@ -325,6 +326,7 @@ struct ConsumeManualView: View {
                     Task { await consume(item) }
                 }
                 .disabled(submittingItemId != nil)
+                .accessibilityIdentifier("consumeSubmitButton")
             }
         }
     }

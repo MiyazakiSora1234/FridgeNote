@@ -252,7 +252,7 @@ final class FridgeNoteUITests: XCTestCase {
         XCTAssertTrue(text("在庫: 6個").waitForExistence(timeout: 20), "stock shown")
         shot("consume_01_list")
 
-        let consumeButton = app.buttons.matching(NSPredicate(format: "label == %@", "減らす")).firstMatch
+        let consumeButton = app.buttons["consumeSubmitButton"]
 
         // 空入力
         tap(consumeButton, "consume button (empty)")
@@ -260,7 +260,7 @@ final class FridgeNoteUITests: XCTestCase {
         dismissAlert()
 
         // 在庫超過
-        let amount = app.textFields["数量"]
+        let amount = app.textFields["consumeAmountField"]
         tap(amount, "amount field")
         amount.typeText("10")
         dismissKeyboard()
@@ -397,7 +397,7 @@ private extension XCUIElement {
     func clearAndType(_ value: String) {
         tap()
         if let current = self.value as? String, !current.isEmpty, current != self.placeholderValue {
-            typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
+            typeText(String(repeating: "\u{8}", count: current.count + 2))
         }
         typeText(value)
     }
