@@ -7,7 +7,7 @@
 | コスト | 月額 1,000円以下(約 $6.5) |
 | ユーザー数 | 約5人(想定トラフィックは極小) |
 | AI推論 | 自前GPUサーバー運用禁止。Amazon Bedrock (サーバーレス/オンデマンド) のみ |
-| クライアント | iOS / Android (Expo + React Native の単一コードベース) |
+| クライアント | iOS (Swift / SwiftUI のネイティブアプリ) |
 
 上記4点を満たすため、**常時稼働リソースを一切持たない完全サーバーレス構成**とする。
 EC2 / RDS / ECS(Fargateの常時起動含む) / NAT Gateway / カスタムドメイン(Route53+ACM) は使用しない。
@@ -16,7 +16,7 @@ EC2 / RDS / ECS(Fargateの常時起動含む) / NAT Gateway / カスタムドメ
 
 ```mermaid
 flowchart TB
-    subgraph Client["📱 モバイルアプリ (Expo / React Native)"]
+    subgraph Client["📱 iOSアプリ (Swift / SwiftUI)"]
         A1[カメラ撮影 / リサイズ・圧縮]
         A2[冷蔵庫一覧UI]
         A3[AI結果確認UI]
@@ -80,7 +80,7 @@ flowchart TB
 
 ## 3. 画像アップロード & AI解析フロー(詳細)
 
-1. モバイルは撮影後、`expo-image-manipulator` で **長辺1280px程度・JPEG quality 0.6〜0.7** にリサイズ圧縮(Bedrockコスト and S3コスト削減の要)。
+1. モバイルは撮影後、`UIGraphicsImageRenderer` で **長辺1280px程度・JPEG quality 0.6〜0.7** にリサイズ圧縮(Bedrockコスト and S3コスト削減の要)。
 2. `POST /v1/images/presigned-url` を呼び、`{ imageKey, uploadUrl, expiresIn }` を受け取る。
    - `imageKey` は `users/{sub}/uploads/{uuid}.jpg` の形式。**必ずパスに `sub` を含め**、他ユーザーの領域へのアップロードをバックエンド側で拒否する。
    - Presigned URLの有効期限は **60秒**。

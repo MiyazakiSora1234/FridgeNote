@@ -1,6 +1,6 @@
 # FridgeNote
 
-食品・料理の写真・レシート・音声から食材を認識し、冷蔵庫の在庫を管理するモバイルアプリケーション(iOS / Android)。
+食品・料理の写真・レシート・音声から食材を認識し、冷蔵庫の在庫を管理するiOSアプリケーション(Swift / SwiftUI)。
 
 - 食材写真 → AIが食材名・カテゴリ・数量・単位・推定賞味期限・confidenceを推定 → ユーザー確認 → 冷蔵庫へ登録
 - 料理写真 → AIが料理名と「使用食材候補」をconfidence付きで推定 → 冷蔵庫在庫と照合 → ユーザーが確認したものだけ在庫を減算
@@ -11,7 +11,7 @@
 いずれの経路でも、**AIやOCR/文字起こしの出力を直接DBの確定データとして書き込む経路は存在しない**。
 必ずユーザーが確認・修正してから確定APIを呼んで初めて在庫が変わる。
 
-設計判断の詳細と、最優先制約(**月額1,000円以下 / 5ユーザー想定 / AI推論はAmazon Bedrockのみ / iOS・Android対応**)を踏まえた
+設計判断の詳細と、最優先制約(**月額1,000円以下 / 5ユーザー想定 / AI推論はAmazon Bedrockのみ / iOSネイティブ(Swift)**)を踏まえた
 アーキテクチャ上のトレードオフは [docs/architecture.md](docs/architecture.md) にまとめている。合わせて
 [docs/dynamodb-design.md](docs/dynamodb-design.md)(DynamoDBのアクセスパターン設計)、
 [docs/api-spec.md](docs/api-spec.md)(API仕様)を参照。
@@ -28,8 +28,9 @@ make backend-ci       # backendのinstall + build + test
 make infra-plan       # terraform plan(Docker経由、~/.awsをread-onlyマウント)
 make infra-apply      # terraform apply(要: 事前にplanの内容を確認)
 make health           # デプロイ済みAPIの /v1/health を確認
-make mobile-typecheck # mobileの型チェック
-make eas-build-ios    # iOS向けEASビルド(要: 事前にApple IDでの対話ログイン済み)
+make ios-build        # (Mac) iOSシミュレータ向けビルド
+make ios-test         # (Mac) iOSユニットテスト
+make remote-build     # (Windows) pushしたソースをMacビルド機でビルド
 ```
 
 ## リポジトリ構成
@@ -50,20 +51,24 @@ FridgeNote/
 │   │   │                     Bedrock/Textract/Transcribe実装+テスト用Mock実装)
 │   │   └── schemas/          AIレスポンス用Zodスキーマ、APIリクエスト用Zodスキーマ
 │   └── test/                 単体テスト・統合テスト(vitest)
-├── mobile/               Expo + React Native(TypeScript)
-│   └── src/
-│       ├── auth/              Cognito認証(amazon-cognito-identity-js)
-│       ├── api/                バックエンドAPIクライアント
-│       ├── screens/            サインイン/一覧/追加メニュー/減らすメニュー/手動登録・減算/
-│       │                       カメラ撮影/音声録音/AI結果確認(食材・料理・レシート・音声共通)
-│       └── lib/imagePrep.ts    アップロード前の画像リサイズ・圧縮
-└── .github/workflows/    CI(backend/mobile)・手動デプロイ(Terraform)
+├── ios/                  iOSアプリ(Swift / SwiftUI、XcodeGenで .xcodeproj を生成)
+│   ├── project.yml        XcodeGen設定(ターゲット・依存・Info.plist設定)
+│   ├── FridgeNote/
+│   │   ├── App/               エントリポイント・ナビゲーション(Router)・サインイン状態
+│   │   ├── Auth/              Cognito SRP認証(SRPClient / CognitoClient)・Keychain保存・トークン更新
+│   │   ├── API/               バックエンドAPIクライアント(URLSession、async/await)
+│   │   ├── Models/            APIレスポンスのCodableモデル
+│   │   ├── Views/             画面(在庫一覧/追加・減算メニュー/手動登録/カメラ/音声録音/AI結果確認)
+│   │   ├── Support/           画像リサイズ・ポーリング・食材名サジェスト・入力検証
+│   │   └── Config/AppConfig.swift  API/Cognitoの接続情報(`make sync-ios-config`で更新)
+│   └── FridgeNoteTests/       SRP・デコード・入力検証のユニットテスト
+└── .github/workflows/    CI(backend/ios)・手動デプロイ(Terraform)
 ```
 
 ## アーキテクチャ概要
 
 ```
-React Native (Expo)
+iOSアプリ (Swift / SwiftUI)
    │ 1. presigned URL取得         (JWT付きAPIコール)
    ▼
 API Gateway (HTTP API, Cognito JWT Authorizer)
@@ -135,22 +140,39 @@ terraform plan -var="alert_email=you@example.com"
 terraform apply -var="alert_email=you@example.com"
 ```
 
-主な出力値(`terraform output`)を `mobile/app.json` の `expo.extra` に反映する:
+主な出力値は `make sync-ios-config` で `ios/FridgeNote/Config/AppConfig.swift` に反映できる
+(手動の場合は以下を書き換える):
 
 - `api_base_url` → `apiBaseUrl`
 - `cognito_user_pool_id` → `cognitoUserPoolId`
 - `cognito_user_pool_client_id` → `cognitoUserPoolClientId`
 
-### 3. モバイルアプリ
+### 3. iOSアプリ
+
+ビルドにはMac + Xcode(15以降)が必要。`.xcodeproj` はリポジトリに含めず、
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) で `ios/project.yml` から生成する(依存の
+[BigInt](https://github.com/attaswift/BigInt) はSwift Package Managerが自動取得する)。
 
 ```bash
-cd mobile
-npm install
-npm run typecheck
-npm start        # Expo Dev Serverを起動し、Expo Goやシミュレータで確認
+brew install xcodegen
+cd ios && xcodegen generate
+open FridgeNote.xcodeproj       # Xcodeでシミュレータ/実機に実行
 ```
 
-`app.json` の `expo.extra` を実際のAPI/Cognito情報に書き換えてから起動すること。
+CLIでシミュレータ向けにビルド・テストする場合(コード署名なし):
+
+```bash
+scripts/mac-build.sh build   # もしくは test
+```
+
+**Windowsで編集 → GitHub経由でMacビルド**: 変更をGitHubへpushしたうえで、Windowsから
+`make remote-build`(`scripts/remote-build.ps1`)を実行すると、Mac(`ssh build-mac`)が
+`~/work/FridgeNote` にcloneまたはpullし、`scripts/mac-build.sh` でビルドする。
+実機向けビルド・TestFlight配布にはApple Developerアカウントでの署名設定(Xcodeの
+Signing & Capabilities)が別途必要。
+
+認証はCognito User Pool(USER_SRP_AUTH)をURLSessionで直接呼ぶ自前実装で、トークンはKeychainに保存する。
+SRP計算は `amazon-cognito-identity-js` の出力と一致することをユニットテスト(`SRPClientTests`)で確認している。
 
 ## テスト
 
@@ -216,9 +238,8 @@ GitHub Actions用のOIDC Provider/デプロイRole/`production` Environment/`AWS
     -v "$(pwd)/..:/workspace" -v ~/.aws:/root/.aws:ro \
     -w /workspace/infra hashicorp/terraform:1.9.0 plan
   ```
-- モバイルアプリはこのサンドボックス環境ではExpo実行環境が使えないため、`npm run typecheck` /
-  `npm test` によるコード検証のみ完了している(以前のEASビルドではiOS実機での動作を別途確認済み)。
-  レシート撮影・音声入力(`expo-av`)は本フェーズで新規に追加したUIのため、次回のEAS統合ビルド後に
-  実機での動作確認(マイク権限ダイアログの表示、録音→アップロード→解析結果表示まで)を推奨する。
+- iOSアプリはExpo/React NativeからSwift/SwiftUIへ移行した(Androidは非対応になった)。移行時の開発環境はWindowsで
+  Xcodeが無いため、**ソースは未コンパイル・未実行の状態**。最初のMacビルドでコンパイルエラーが出る可能性があり、
+  サインイン(SRP)・カメラ・録音・アップロードは実機/シミュレータでの動作確認が必要。
 - Bedrockの実際のモデル出力・料金は本番アカウントでの検証が必要(モデルIDやプロンプトは `BEDROCK_MODEL_ID`
   環境変数で変更可能)。

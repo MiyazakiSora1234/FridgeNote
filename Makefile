@@ -10,8 +10,8 @@ SHELL := /bin/bash
 .PHONY: help \
 	backend-install backend-build backend-test backend-package backend-ci \
 	infra-fmt infra-init infra-validate infra-plan infra-apply infra-output infra-clean \
-	mobile-install mobile-typecheck mobile-start eas-init eas-build-ios eas-build-list \
-	check-consistency sync-mobile-config \
+	ios-generate ios-build ios-test remote-build \
+	check-consistency sync-ios-config \
 	health deploy-plan deploy-apply clean
 
 PROJECT_ROOT   := $(CURDIR)
@@ -42,21 +42,19 @@ help:
 	@echo "  infra-output      terraform output"
 	@echo "  infra-clean       remove .terraform/ etc."
 	@echo ""
-	@echo "  mobile-install    install mobile deps"
-	@echo "  mobile-typecheck  tsc --noEmit"
-	@echo "  mobile-start      start Expo dev server (for Expo Go)"
-	@echo "  eas-init          create/link the EAS project"
-	@echo "  eas-build-ios     iOS EAS build (preview / internal distribution)"
-	@echo "  eas-build-list    list recent EAS builds"
+	@echo "  ios-generate      (Mac) generate ios/FridgeNote.xcodeproj via XcodeGen"
+	@echo "  ios-build         (Mac) build for the iOS simulator"
+	@echo "  ios-test          (Mac) run iOS unit tests on the simulator"
+	@echo "  remote-build      (Windows) build on the Mac build machine over SSH (push first)"
 	@echo ""
-	@echo "  check-consistency verify backend/mobile shared constants haven't drifted"
-	@echo "  sync-mobile-config update mobile/app.json extra from terraform output"
+	@echo "  check-consistency verify backend/ios shared constants haven't drifted"
+	@echo "  sync-ios-config   update ios AppConfig.swift from terraform output"
 	@echo ""
 	@echo "  health            curl the deployed API's /v1/health"
 	@echo "  deploy-plan       trigger deploy.yml workflow_dispatch, plan only"
 	@echo "  deploy-apply      trigger deploy.yml workflow_dispatch, with apply"
 	@echo ""
-	@echo "  clean             remove backend/mobile build artifacts"
+	@echo "  clean             remove backend/ios build artifacts"
 	@echo ""
 	@echo "Note: comments in this Makefile are in Japanese (UTF-8); this help text is"
 	@echo "kept ASCII-only to avoid mojibake on Windows consoles using codepage 932."
@@ -117,35 +115,29 @@ infra-output:
 infra-clean:
 	rm -rf infra/.terraform infra/build infra/tfplan*
 
-# ---- mobile -----------------------------------------------------------------
+# ---- ios (Swift / SwiftUI) ---------------------------------------------------
+# ビルドにはXcodeが必要なのでMac上で実行する(Windowsからは remote-build でMacへSSH)。
 
-mobile-install:
-	cd mobile && npm install
+ios-generate:
+	cd ios && xcodegen generate
 
-mobile-typecheck:
-	cd mobile && npm run typecheck
+ios-build:
+	SKIP_PULL=1 scripts/mac-build.sh build
 
-mobile-start:
-	cd mobile && npx expo start
+ios-test:
+	SKIP_PULL=1 scripts/mac-build.sh test
 
-eas-init:
-	cd mobile && npx eas-cli init --non-interactive
-
-# 初回は配布用証明書が無いため `cd mobile && npx eas-cli build --platform ios --profile preview`
-# を対話モードで一度実行してApple IDでのログインを済ませておくこと(README参照)。
-eas-build-ios:
-	cd mobile && npx eas-cli build --platform ios --profile preview --non-interactive
-
-eas-build-list:
-	cd mobile && npx eas-cli build:list --platform ios --limit 5
+# Windows(PowerShell)から: 事前に変更をGitHubへpushしておくこと。MacがGitHubからpullしてビルドする。
+remote-build:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/remote-build.ps1
 
 # ---- shared constants --------------------------------------------------------
 
 check-consistency:
 	node scripts/check-shared-constants.mjs
 
-sync-mobile-config:
-	$(DOCKER) run --rm -v "$(PROJECT_ROOT):/workspace" -v ~/.aws:/root/.aws:ro -w /workspace/infra $(TF_IMAGE) output -json | node scripts/sync-mobile-config.mjs
+sync-ios-config:
+	$(DOCKER) run --rm -v "$(PROJECT_ROOT):/workspace" -v ~/.aws:/root/.aws:ro -w /workspace/infra $(TF_IMAGE) output -json | node scripts/sync-ios-config.mjs
 
 # ---- misc -------------------------------------------------------------------
 
@@ -161,4 +153,4 @@ deploy-apply:
 	gh workflow run deploy.yml --repo $(GH_REPO) -f apply=true
 
 clean: infra-clean
-	rm -rf backend/dist mobile/.expo mobile/dist mobile/web-build
+	rm -rf backend/dist ios/build ios/FridgeNote.xcodeproj

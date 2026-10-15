@@ -1,20 +1,20 @@
 name: consistency-check
 
-# backendとmobileで別々に定義している「本来共有すべき定数」がズレていないかを検証する。
-# (npm workspacesによる型/定数共有は、Expo/Metro側のモノレポ対応を検証できていないため見送っており、
-#  代わりにこのスクリプトで機械的にドリフトを検知する)
+# backendとiosで別々に定義している「本来共有すべき定数」がズレていないかを検証する。
+# (TypeScriptとSwiftでは定数を共有できないため、このスクリプトで機械的にドリフトを検知する)
+
 on:
   pull_request:
     paths:
       - "backend/src/schemas/aiSchemas.ts"
-      - "mobile/src/constants.ts"
+      - "ios/FridgeNote/Support/Constants.swift"
       - "scripts/check-shared-constants.mjs"
       - ".github/workflows/consistency-check.yml"
   push:
     branches: [main]
     paths:
       - "backend/src/schemas/aiSchemas.ts"
-      - "mobile/src/constants.ts"
+      - "ios/FridgeNote/Support/Constants.swift"
       - "scripts/check-shared-constants.mjs"
 
 jobs:
