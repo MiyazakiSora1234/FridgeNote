@@ -1,12 +1,10 @@
 # GitHub Actionsに長期IAMキーを持たせず、OIDCで実行時だけ一時クレデンシャルを払い出す。
-data "tls_certificate" "github_actions" {
-  url = "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
-}
-
-resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.github_actions.certificates[0].sha1_fingerprint]
+# GitHub ActionsのOIDCプロバイダーはURLごとにアカウント内で1つしか作れず、他プロジェクトと共有される。
+# 既に存在する前提でdata参照する(このスタックでは作成・削除しない)。無いアカウントでは先に1度だけ
+# `aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com`
+# で作成すること。
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
 }
 
 # subクレームはリポジトリ名だけでなく不変IDも含む(GitHub側の実際の形式)ため、StringLikeでワイルドカードマッチさせる。
@@ -20,7 +18,7 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [data.aws_iam_openid_connect_provider.github.arn]
     }
     condition {
       test     = "StringEquals"
@@ -147,7 +145,7 @@ data "aws_iam_policy_document" "github_actions_deploy" {
     sid     = "ManageOwnOidcProviderAndDeployRole"
     actions = ["iam:GetOpenIDConnectProvider", "iam:GetRole", "iam:ListRolePolicies", "iam:GetRolePolicy"]
     resources = [
-      aws_iam_openid_connect_provider.github.arn,
+      data.aws_iam_openid_connect_provider.github.arn,
       aws_iam_role.github_actions_deploy.arn,
     ]
   }
