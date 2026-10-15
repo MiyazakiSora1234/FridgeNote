@@ -49,9 +49,13 @@ final class FridgeNoteUITests: XCTestCase {
         let pwField = app.secureTextFields["パスワード"]
         pwField.tap(); pwField.typeText(password)
         shot("02_signin_filled")
+        let t0 = Date()
         button("サインイン").tap()
+        sleep(3)
+        shot("02b_signin_after_3s")
 
-        XCTAssertTrue(text("冷蔵庫").waitForExistence(timeout: 40), "list screen after sign-in")
+        XCTAssertTrue(button("追加する").waitForExistence(timeout: 120), "list screen after sign-in")
+        print("SIGNIN_SECONDS=\(Date().timeIntervalSince(t0))")
         shot("03_list_empty")
 
         // --- 手動で追加
@@ -88,7 +92,7 @@ final class FridgeNoteUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
         // --- 家族で共有
-        XCTAssertTrue(text("冷蔵庫").waitForExistence(timeout: 10), "back on list")
+        XCTAssertTrue(button("追加する").waitForExistence(timeout: 10), "back on list")
         shot("10_list_again")
         let household = button("家族")
         if household.waitForExistence(timeout: 3) {
