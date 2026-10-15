@@ -44,10 +44,21 @@ xcodebuild archive \
   DEVELOPMENT_TEAM="$TEAM_ID" \
   CODE_SIGNING_ALLOWED=NO
 
+# export で署名済みの ipa を作り、altool で App Store Connect へアップロードする。
+# (Xcode の upload 指定は API キーでの「store configuration」取得に失敗することがあったため分けている)
+rm -rf build/export
 xcodebuild -exportArchive \
   -archivePath "$ARCHIVE" \
   -exportOptionsPlist ExportOptions.plist \
   -exportPath build/export \
   "${AUTH[@]}"
 
-echo "Uploaded. App Store Connect > TestFlight でビルドの処理完了を待ち、テスターを招待してください。"
+if [[ -n "${ASC_KEY_PATH:-}" ]]; then
+  # altool は ~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8 を探す
+  xcrun altool --upload-app -f build/export/FridgeNote.ipa -t ios \
+    --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+else
+  echo "ASC_KEY_PATH 未指定: build/export/FridgeNote.ipa を Transporter アプリ等で手動アップロードしてください。"
+fi
+
+echo "Done. App Store Connect > TestFlight でビルドの処理完了を待ち、テスターを招待してください。"
