@@ -256,7 +256,7 @@ struct AddItemManualView: View {
                     sourceAnalysisId: nil
                 )
             )
-            router.pop()
+            router.popToRoot()
         } catch {
             alert = AlertInfo("登録に失敗しました", error: error)
         }
