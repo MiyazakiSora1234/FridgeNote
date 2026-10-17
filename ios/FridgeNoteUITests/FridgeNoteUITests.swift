@@ -395,9 +395,10 @@ final class FridgeNoteUITests: XCTestCase {
 private extension XCUIElement {
     /// 既存の入力を消してから入力する。
     func clearAndType(_ value: String) {
-        tap()
+        // 真ん中をタップするとキャレットが途中に入り、消し残すので、右端をタップして末尾に置く。
+        coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
         if let current = self.value as? String, !current.isEmpty, current != self.placeholderValue {
-            typeText(String(repeating: "\u{8}", count: current.count + 2))
+            typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
         }
         typeText(value)
     }
